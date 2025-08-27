@@ -7,6 +7,7 @@ public class User : IdentityUser
     public string? Preferences { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public AuthProvider AuthProvider { get; set; } = AuthProvider.Google;
 
     // Navigation properties
     public ICollection<UserSession> UserSessions { get; set; } = new List<UserSession>();

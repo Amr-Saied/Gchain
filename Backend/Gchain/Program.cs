@@ -127,6 +127,7 @@ builder
 builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<ConfigurationService>();
 builder.Services.AddScoped<IGoogleOAuthService, GoogleOAuthService>();
+builder.Services.AddScoped<IGuestAuthService, GuestAuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddHttpClient<GoogleOAuthService>();
 builder.Services.AddHttpContextAccessor();
@@ -152,7 +153,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c =>
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "Gchain API V1");
-        c.RoutePrefix = "swagger";
+        c.RoutePrefix = string.Empty;
         c.DocumentTitle = "Gchain API Documentation";
         c.DefaultModelsExpandDepth(2);
         c.DefaultModelExpandDepth(2);
