@@ -271,4 +271,173 @@ public class UserService : IUserService
             };
         }
     }
+
+    /// <summary>
+    /// Finds an existing user by username
+    /// </summary>
+    public async Task<User?> FindUserByUsernameAsync(string username)
+    {
+        try
+        {
+            return await _userManager.FindByNameAsync(username);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Exception occurred while finding user by username {Username}",
+                username
+            );
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Creates a new guest user in the database
+    /// </summary>
+    public async Task<(User user, bool success)> CreateGuestUserAsync(
+        string username,
+        string? preferences
+    )
+    {
+        try
+        {
+            var newUser = new User
+            {
+                UserName = username,
+                Email = $"{username}@guest.local", // Dummy email for Identity requirements
+                EmailConfirmed = false,
+                AuthProvider = AuthProvider.Guest,
+                Preferences = preferences,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            var result = await _userManager.CreateAsync(newUser);
+
+            if (!result.Succeeded)
+            {
+                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                _logger.LogError(
+                    "Failed to create guest user {Username}: {Errors}",
+                    username,
+                    errors
+                );
+                return (newUser, false);
+            }
+
+            _logger.LogInformation("Successfully created new guest user: {Username}", username);
+            return (newUser, true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Exception occurred while creating guest user {Username}",
+                username
+            );
+            return (new User(), false);
+        }
+    }
+
+    /// <summary>
+    /// Checks if a browser already has an active guest session within 1 hour
+    /// </summary>
+    public async Task<UserSession?> CheckForExistingGuestSessionAsync(string browserId)
+    {
+        try
+        {
+            // Find active guest session for this browser within 1 hour
+            var oneHourAgo = DateTime.UtcNow.AddHours(-1);
+
+            var existingSession = await _dbContext
+                .UserSessions.Include(us => us.User)
+                .FirstOrDefaultAsync(us =>
+                    us.DeviceInfo == browserId
+                    && us.IsActive
+                    && us.ExpiresAt > DateTime.UtcNow
+                    && us.User.AuthProvider == AuthProvider.Guest
+                    && us.CreatedAt > oneHourAgo // Session must be created within last hour
+                );
+
+            if (existingSession != null)
+            {
+                _logger.LogInformation(
+                    "Found active guest session within 1 hour for browser {BrowserId}, user: {Username}",
+                    browserId,
+                    existingSession.User.UserName
+                );
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "No active guest session within 1 hour for browser {BrowserId}, will create new guest",
+                    browserId
+                );
+            }
+
+            return existingSession;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to check for existing guest session for browser {BrowserId}",
+                browserId
+            );
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Refreshes an existing guest session with new tokens
+    /// </summary>
+    public async Task<UserSession> RefreshExistingGuestSessionAsync(UserSession existingSession)
+    {
+        try
+        {
+            // Generate new refresh token
+            var newRefreshToken = Guid.NewGuid().ToString();
+
+            // Update session with new token and extend expiration
+            existingSession.RefreshToken = newRefreshToken;
+            existingSession.ExpiresAt = DateTime.UtcNow.AddDays(7);
+
+            await _dbContext.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Refreshed existing guest session for user {UserId}",
+                existingSession.UserId
+            );
+
+            return existingSession;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to refresh existing guest session for user {UserId}",
+                existingSession.UserId
+            );
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Updates user session information
+    /// </summary>
+    public async Task<bool> UpdateUserSessionAsync(UserSession userSession)
+    {
+        try
+        {
+            _dbContext.UserSessions.Update(userSession);
+            await _dbContext.SaveChangesAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update user session {SessionId}", userSession.Id);
+            return false;
+        }
+    }
 }
