@@ -72,11 +72,8 @@ public class GoogleOAuthService : IGoogleOAuthService
             var accessToken = _jwtService.GenerateAccessToken(user);
             var refreshToken = _jwtService.GenerateRefreshToken();
 
-            // Create or update user session using UserService
-            var userSession = await _userService.CreateOrUpdateUserSessionAsync(
-                user.Id,
-                refreshToken
-            );
+            // Create user session using UserService
+            var userSession = await _userService.CreateUserSessionAsync(user.Id, refreshToken);
 
             // Get user profile data using UserService
             var userProfile = await _userService.GetUserProfileAsync(user.Id);

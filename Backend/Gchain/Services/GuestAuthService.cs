@@ -46,14 +46,16 @@ public class GuestAuthService : IGuestAuthService
                     existingSession.User.UserName
                 );
 
-                // Refresh existing session
-                var refreshedSession = await _userService.RefreshExistingGuestSessionAsync(
-                    existingSession
-                );
-
                 // Generate new JWT tokens for existing user
                 var existingAccessToken = _jwtService.GenerateAccessToken(existingSession.User);
-                var existingRefreshToken = refreshedSession.RefreshToken;
+                var newRefreshToken = _jwtService.GenerateRefreshToken();
+
+                // Update existing session with new tokens
+                existingSession.RefreshToken = newRefreshToken;
+                existingSession.ExpiresAt = DateTime.UtcNow.AddDays(7);
+                await _userService.UpdateUserSessionAsync(existingSession);
+
+                var existingRefreshToken = newRefreshToken;
 
                 // Get user profile data
                 var existingUserProfile = await _userService.GetUserProfileAsync(
@@ -83,10 +85,10 @@ public class GuestAuthService : IGuestAuthService
                     DatabaseUserId = existingSession.User.Id,
                     UserSession = new UserSessionInfo
                     {
-                        Id = refreshedSession.Id.ToString(),
-                        RefreshToken = refreshedSession.RefreshToken,
-                        ExpiresAt = refreshedSession.ExpiresAt ?? DateTime.UtcNow.AddDays(7),
-                        CreatedAt = refreshedSession.CreatedAt
+                        Id = existingSession.Id.ToString(),
+                        RefreshToken = existingSession.RefreshToken,
+                        ExpiresAt = existingSession.ExpiresAt ?? DateTime.UtcNow.AddDays(7),
+                        CreatedAt = existingSession.CreatedAt
                     },
                     UserProfile = existingUserProfile
                 };
@@ -114,14 +116,11 @@ public class GuestAuthService : IGuestAuthService
             var refreshToken = _jwtService.GenerateRefreshToken();
 
             // Create user session with browser ID
-            var userSession = await _userService.CreateOrUpdateUserSessionAsync(
+            var userSession = await _userService.CreateUserSessionAsync(
                 user.Id,
-                refreshToken
+                refreshToken,
+                deviceInfo: browserId
             );
-
-            // Update session with browser ID
-            userSession.DeviceInfo = browserId;
-            await _userService.UpdateUserSessionAsync(userSession);
 
             // Get user profile data
             var userProfile = await _userService.GetUserProfileAsync(user.Id);
