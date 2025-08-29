@@ -47,7 +47,7 @@ namespace Gchain.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Badges");
+                    b.ToTable("Badges", (string)null);
                 });
 
             modelBuilder.Entity("Gchain.Models.GameSession", b =>
@@ -88,7 +88,7 @@ namespace Gchain.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("GameSessions");
+                    b.ToTable("GameSessions", (string)null);
                 });
 
             modelBuilder.Entity("Gchain.Models.Notification", b =>
@@ -121,7 +121,7 @@ namespace Gchain.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Notifications");
+                    b.ToTable("Notifications", (string)null);
                 });
 
             modelBuilder.Entity("Gchain.Models.RoundResult", b =>
@@ -153,7 +153,7 @@ namespace Gchain.Migrations
                     b.HasIndex("GameSessionId", "RoundNumber")
                         .IsUnique();
 
-                    b.ToTable("RoundResults");
+                    b.ToTable("RoundResults", (string)null);
                 });
 
             modelBuilder.Entity("Gchain.Models.Team", b =>
@@ -181,7 +181,7 @@ namespace Gchain.Migrations
 
                     b.HasIndex("GameSessionId");
 
-                    b.ToTable("Teams");
+                    b.ToTable("Teams", (string)null);
                 });
 
             modelBuilder.Entity("Gchain.Models.TeamChatMessage", b =>
@@ -214,7 +214,7 @@ namespace Gchain.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("TeamChatMessages");
+                    b.ToTable("TeamChatMessages", (string)null);
                 });
 
             modelBuilder.Entity("Gchain.Models.TeamMember", b =>
@@ -250,7 +250,7 @@ namespace Gchain.Migrations
                     b.HasIndex("TeamId", "UserId")
                         .IsUnique();
 
-                    b.ToTable("TeamMembers");
+                    b.ToTable("TeamMembers", (string)null);
                 });
 
             modelBuilder.Entity("Gchain.Models.User", b =>
@@ -351,7 +351,7 @@ namespace Gchain.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserBadges");
+                    b.ToTable("UserBadges", (string)null);
                 });
 
             modelBuilder.Entity("Gchain.Models.UserSession", b =>
@@ -391,7 +391,7 @@ namespace Gchain.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserSessions");
+                    b.ToTable("UserSessions", (string)null);
                 });
 
             modelBuilder.Entity("Gchain.Models.WordGuess", b =>
@@ -430,7 +430,7 @@ namespace Gchain.Migrations
 
                     b.HasIndex("GameSessionId", "RoundNumber");
 
-                    b.ToTable("WordGuesses");
+                    b.ToTable("WordGuesses", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
