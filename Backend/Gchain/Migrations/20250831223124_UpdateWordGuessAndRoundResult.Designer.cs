@@ -4,6 +4,7 @@ using Gchain.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Gchain.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250831223124_UpdateWordGuessAndRoundResult")]
+    partial class UpdateWordGuessAndRoundResult
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -701,9 +704,9 @@ namespace Gchain.Migrations
                         .IsRequired();
 
                     b.HasOne("Gchain.Models.Team", "Team")
-                        .WithMany("WordGuesses")
+                        .WithMany()
                         .HasForeignKey("TeamId")
-                        .OnDelete(DeleteBehavior.NoAction)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("Gchain.Models.User", "User")
@@ -791,8 +794,6 @@ namespace Gchain.Migrations
                     b.Navigation("TeamMembers");
 
                     b.Navigation("WonRounds");
-
-                    b.Navigation("WordGuesses");
                 });
 
             modelBuilder.Entity("Gchain.Models.User", b =>

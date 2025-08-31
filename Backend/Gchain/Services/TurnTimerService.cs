@@ -303,4 +303,71 @@ public class TurnTimerService : ITurnTimerService
             return 0;
         }
     }
+
+    public async Task<bool> StartTurnTimerAsync(int gameSessionId, int turnDurationSeconds)
+    {
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(turnDurationSeconds);
+            var deadlineKey = GetTurnDeadlineKey(gameSessionId);
+            var activeTimersKey = GetActiveTurnTimersKey();
+
+            // Set deadline
+            var success = await _redis.SetAsync(deadlineKey, deadline.ToString("O"));
+
+            if (success)
+            {
+                // Add to active timers sorted set
+                var score = ((DateTimeOffset)deadline).ToUnixTimeSeconds();
+                await _redis.SortedSetAddAsync(activeTimersKey, gameSessionId.ToString(), score);
+
+                _logger.LogInformation(
+                    "Started turn timer for game {GameSessionId} with {Duration}s duration",
+                    gameSessionId,
+                    turnDurationSeconds
+                );
+
+                return true;
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to start turn timer for game {GameSessionId}",
+                gameSessionId
+            );
+            return false;
+        }
+    }
+
+    public async Task<bool> StopTurnTimerAsync(int gameSessionId)
+    {
+        try
+        {
+            var deadlineKey = GetTurnDeadlineKey(gameSessionId);
+            var activeTimersKey = GetActiveTurnTimersKey();
+
+            // Remove deadline
+            await _redis.DeleteAsync(deadlineKey);
+
+            // Remove from active timers
+            await _redis.SortedSetRemoveAsync(activeTimersKey, gameSessionId.ToString());
+
+            _logger.LogInformation("Stopped turn timer for game {GameSessionId}", gameSessionId);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to stop turn timer for game {GameSessionId}",
+                gameSessionId
+            );
+            return false;
+        }
+    }
 }

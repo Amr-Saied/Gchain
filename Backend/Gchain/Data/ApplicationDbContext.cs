@@ -103,6 +103,12 @@ public class ApplicationDbContext : IdentityDbContext<User>
                 .WithMany(u => u.WordGuesses)
                 .HasForeignKey(wg => wg.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity
+                .HasOne(wg => wg.Team)
+                .WithMany(t => t.WordGuesses)
+                .HasForeignKey(wg => wg.TeamId)
+                .OnDelete(DeleteBehavior.NoAction);
         });
 
         // RoundResult configuration

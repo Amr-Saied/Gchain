@@ -1,5 +1,6 @@
 using System.Text;
 using Gchain.Data;
+using Gchain.Hubs;
 using Gchain.Interfaces;
 using Gchain.Models;
 using Gchain.Services;
@@ -135,6 +136,8 @@ builder.Services.AddScoped<ConfigurationService>();
 builder.Services.AddScoped<IGoogleOAuthService, GoogleOAuthService>();
 builder.Services.AddScoped<IGuestAuthService, GuestAuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IGameService, GameService>();
+builder.Services.AddScoped<ITeamService, TeamService>();
 
 // Register Redis services
 builder.Services.AddSingleton<IRedisService, RedisService>();
@@ -160,10 +163,13 @@ builder.Services.AddCors(options =>
         "AllowAll",
         policy =>
         {
-            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader().AllowCredentials(); // Required for SignalR
         }
     );
 });
+
+// Add SignalR services
+builder.Services.AddSignalR();
 
 var app = builder.Build();
 
@@ -189,4 +195,9 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHealthChecks("/health");
+
+// Map SignalR hubs
+app.MapHub<GameHub>("/gamehub");
+app.MapHub<ChatHub>("/chathub");
+
 app.Run();

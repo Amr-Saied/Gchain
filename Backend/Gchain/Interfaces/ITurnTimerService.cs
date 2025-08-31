@@ -68,4 +68,19 @@ public interface ITurnTimerService
     /// </summary>
     /// <returns>Number of timers cleaned up</returns>
     Task<int> CleanupExpiredTimersAsync();
+
+    /// <summary>
+    /// Start turn timer for a game session
+    /// </summary>
+    /// <param name="gameSessionId">Game session ID</param>
+    /// <param name="turnDurationSeconds">Turn duration in seconds</param>
+    /// <returns>True if timer started successfully</returns>
+    Task<bool> StartTurnTimerAsync(int gameSessionId, int turnDurationSeconds);
+
+    /// <summary>
+    /// Stop turn timer for a game session
+    /// </summary>
+    /// <param name="gameSessionId">Game session ID</param>
+    /// <returns>True if timer stopped successfully</returns>
+    Task<bool> StopTurnTimerAsync(int gameSessionId);
 }
