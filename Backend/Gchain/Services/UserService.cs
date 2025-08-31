@@ -110,38 +110,25 @@ public class UserService : IUserService
     }
 
     /// <summary>
-    /// Creates or updates a user session
+    /// Creates a new user session
     /// </summary>
-    public async Task<UserSession> CreateOrUpdateUserSessionAsync(
+    public async Task<UserSession> CreateUserSessionAsync(
         string userId,
-        string refreshToken
+        string refreshToken,
+        string? deviceInfo = null,
+        string? ipAddress = null,
+        int expirationDays = 7
     )
     {
         try
         {
-            // Check if user already has an active session
-            var existingSession = await _dbContext.UserSessions.FirstOrDefaultAsync(us =>
-                us.UserId == userId && us.ExpiresAt > DateTime.UtcNow
-            );
-
-            if (existingSession != null)
-            {
-                // Update existing session
-                existingSession.RefreshToken = refreshToken;
-                existingSession.ExpiresAt = DateTime.UtcNow.AddDays(7); // 7 days
-                existingSession.IsActive = true;
-
-                await _dbContext.SaveChangesAsync();
-                _logger.LogInformation("Updated existing user session for user {UserId}", userId);
-                return existingSession;
-            }
-
-            // Create new session
             var newSession = new UserSession
             {
                 UserId = userId,
                 RefreshToken = refreshToken,
-                ExpiresAt = DateTime.UtcNow.AddDays(7), // 7 days
+                DeviceInfo = deviceInfo,
+                IpAddress = ipAddress,
+                ExpiresAt = DateTime.UtcNow.AddDays(expirationDays),
                 CreatedAt = DateTime.UtcNow,
                 IsActive = true
             };
@@ -154,16 +141,8 @@ public class UserService : IUserService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to create/update user session for user {UserId}", userId);
-            // Return a minimal session object if database operation fails
-            return new UserSession
-            {
-                UserId = userId,
-                RefreshToken = refreshToken,
-                ExpiresAt = DateTime.UtcNow.AddDays(7),
-                CreatedAt = DateTime.UtcNow,
-                IsActive = true
-            };
+            _logger.LogError(ex, "Failed to create user session for user {UserId}", userId);
+            throw;
         }
     }
 
@@ -386,40 +365,6 @@ public class UserService : IUserService
                 browserId
             );
             return null;
-        }
-    }
-
-    /// <summary>
-    /// Refreshes an existing guest session with new tokens
-    /// </summary>
-    public async Task<UserSession> RefreshExistingGuestSessionAsync(UserSession existingSession)
-    {
-        try
-        {
-            // Generate new refresh token
-            var newRefreshToken = Guid.NewGuid().ToString();
-
-            // Update session with new token and extend expiration
-            existingSession.RefreshToken = newRefreshToken;
-            existingSession.ExpiresAt = DateTime.UtcNow.AddDays(7);
-
-            await _dbContext.SaveChangesAsync();
-
-            _logger.LogInformation(
-                "Refreshed existing guest session for user {UserId}",
-                existingSession.UserId
-            );
-
-            return existingSession;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Failed to refresh existing guest session for user {UserId}",
-                existingSession.UserId
-            );
-            throw;
         }
     }
 

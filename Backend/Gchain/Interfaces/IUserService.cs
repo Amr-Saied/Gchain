@@ -36,12 +36,21 @@ public interface IUserService
     Task<bool> UpdateUserAsync(User user);
 
     /// <summary>
-    /// Creates or updates a user session
+    /// Creates a new user session
     /// </summary>
     /// <param name="userId">User ID</param>
     /// <param name="refreshToken">Refresh token</param>
-    /// <returns>User session</returns>
-    Task<UserSession> CreateOrUpdateUserSessionAsync(string userId, string refreshToken);
+    /// <param name="deviceInfo">Optional device information</param>
+    /// <param name="ipAddress">Optional IP address</param>
+    /// <param name="expirationDays">Session expiration in days (default: 7)</param>
+    /// <returns>Created user session</returns>
+    Task<UserSession> CreateUserSessionAsync(
+        string userId,
+        string refreshToken,
+        string? deviceInfo = null,
+        string? ipAddress = null,
+        int expirationDays = 7
+    );
 
     /// <summary>
     /// Checks if a browser already has an active guest session
@@ -49,13 +58,6 @@ public interface IUserService
     /// <param name="browserId">Browser identifier (IP + User-Agent hash)</param>
     /// <returns>Existing guest session if found, null otherwise</returns>
     Task<UserSession?> CheckForExistingGuestSessionAsync(string browserId);
-
-    /// <summary>
-    /// Refreshes an existing guest session with new tokens
-    /// </summary>
-    /// <param name="existingSession">Existing user session</param>
-    /// <returns>Refreshed user session</returns>
-    Task<UserSession> RefreshExistingGuestSessionAsync(UserSession existingSession);
 
     /// <summary>
     /// Updates user session information

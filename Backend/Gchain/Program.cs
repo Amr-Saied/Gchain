@@ -99,6 +99,12 @@ builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSet
 // Configure Google OAuth settings
 builder.Services.Configure<GoogleOAuthSettings>(builder.Configuration.GetSection("GoogleOAuth"));
 
+// Configure Redis settings
+builder.Services.Configure<RedisSettings>(builder.Configuration.GetSection("Redis"));
+
+// Configure Hugging Face settings
+builder.Services.Configure<HuggingFaceSettings>(builder.Configuration.GetSection("HuggingFace"));
+
 builder
     .Services.AddAuthentication(options =>
     {
@@ -129,8 +135,23 @@ builder.Services.AddScoped<ConfigurationService>();
 builder.Services.AddScoped<IGoogleOAuthService, GoogleOAuthService>();
 builder.Services.AddScoped<IGuestAuthService, GuestAuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
+
+// Register Redis services
+builder.Services.AddSingleton<IRedisService, RedisService>();
+builder.Services.AddScoped<IGameStateCacheService, GameStateCacheService>();
+builder.Services.AddScoped<IRateLimitService, RateLimitService>();
+builder.Services.AddScoped<ITurnTimerService, TurnTimerService>();
+builder.Services.AddScoped<IWordCacheService, WordCacheService>();
+
+// Register Hugging Face service
+builder.Services.AddHttpClient<HuggingFaceService>();
+builder.Services.AddScoped<ISemanticSimilarityService, HuggingFaceService>();
+
 builder.Services.AddHttpClient<GoogleOAuthService>();
 builder.Services.AddHttpContextAccessor();
+
+// Add health checks
+builder.Services.AddHealthChecks().AddCheck<RedisHealthCheck>("redis");
 
 // Configure CORS
 builder.Services.AddCors(options =>
@@ -167,4 +188,5 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHealthChecks("/health");
 app.Run();
