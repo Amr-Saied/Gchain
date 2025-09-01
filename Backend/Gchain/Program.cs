@@ -106,6 +106,9 @@ builder.Services.Configure<RedisSettings>(builder.Configuration.GetSection("Redi
 // Configure Hugging Face settings
 builder.Services.Configure<HuggingFaceSettings>(builder.Configuration.GetSection("HuggingFace"));
 
+// Configure Email settings
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
+
 builder
     .Services.AddAuthentication(options =>
     {
@@ -141,6 +144,7 @@ builder.Services.AddScoped<ITeamService, TeamService>();
 builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IBadgeService, BadgeService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
 
 // Register Redis services
 builder.Services.AddSingleton<IRedisService, RedisService>();
@@ -148,6 +152,10 @@ builder.Services.AddScoped<IGameStateCacheService, GameStateCacheService>();
 builder.Services.AddScoped<IRateLimitService, RateLimitService>();
 builder.Services.AddScoped<ITurnTimerService, TurnTimerService>();
 builder.Services.AddScoped<IWordCacheService, WordCacheService>();
+
+// Register background services
+builder.Services.AddScoped<ICleanupService, CleanupService>();
+builder.Services.AddHostedService<BackgroundServiceHost>();
 
 // Register Hugging Face service
 builder.Services.AddHttpClient<HuggingFaceService>();

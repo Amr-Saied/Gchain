@@ -1,9 +1,9 @@
+using System.Text.Json;
 using Gchain.Data;
 using Gchain.DTOS;
 using Gchain.Interfaces;
 using Gchain.Models;
 using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
 
 namespace Gchain.Services;
 
@@ -14,16 +14,19 @@ public class BadgeService : IBadgeService
 {
     private readonly ApplicationDbContext _context;
     private readonly INotificationService _notificationService;
+    private readonly IEmailService _emailService;
     private readonly ILogger<BadgeService> _logger;
 
     public BadgeService(
         ApplicationDbContext context,
         INotificationService notificationService,
+        IEmailService emailService,
         ILogger<BadgeService> logger
     )
     {
         _context = context;
         _notificationService = notificationService;
+        _emailService = emailService;
         _logger = logger;
     }
 
@@ -58,11 +61,7 @@ public class BadgeService : IBadgeService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to create badge: {BadgeName}", request.Name);
-            return new CreateBadgeResponse
-            {
-                Success = false,
-                Message = "Failed to create badge"
-            };
+            return new CreateBadgeResponse { Success = false, Message = "Failed to create badge" };
         }
     }
 
@@ -111,7 +110,7 @@ public class BadgeService : IBadgeService
         try
         {
             var query = _context.Badges.AsQueryable();
-            
+
             if (activeOnly)
                 query = query.Where(b => b.IsActive);
 
@@ -146,8 +145,8 @@ public class BadgeService : IBadgeService
     {
         try
         {
-            var badge = await _context.Badges
-                .Where(b => b.Id == badgeId)
+            var badge = await _context
+                .Badges.Where(b => b.Id == badgeId)
                 .Select(b => new BadgeResponse
                 {
                     Id = b.Id,
@@ -176,8 +175,8 @@ public class BadgeService : IBadgeService
     {
         try
         {
-            var earnedBadges = await _context.UserBadges
-                .Include(ub => ub.Badge)
+            var earnedBadges = await _context
+                .UserBadges.Include(ub => ub.Badge)
                 .Where(ub => ub.UserId == request.UserId)
                 .Select(ub => new UserBadgeResponse
                 {
@@ -193,11 +192,15 @@ public class BadgeService : IBadgeService
                 .OrderByDescending(ub => ub.EarnedAt)
                 .ToListAsync();
 
-            var availableBadgesQuery = _context.Badges
-                .Where(b => b.IsActive && !_context.UserBadges.Any(ub => ub.UserId == request.UserId && ub.BadgeId == b.Id));
+            var availableBadgesQuery = _context.Badges.Where(b =>
+                b.IsActive
+                && !_context.UserBadges.Any(ub => ub.UserId == request.UserId && ub.BadgeId == b.Id)
+            );
 
             if (request.Type.HasValue)
-                availableBadgesQuery = availableBadgesQuery.Where(b => b.Type == request.Type.Value);
+                availableBadgesQuery = availableBadgesQuery.Where(b =>
+                    b.Type == request.Type.Value
+                );
 
             var availableBadges = await availableBadgesQuery
                 .Select(b => new BadgeResponse
@@ -244,18 +247,20 @@ public class BadgeService : IBadgeService
         try
         {
             var totalBadges = await _context.Badges.Where(b => b.IsActive).CountAsync();
-            var earnedBadges = await _context.UserBadges.Where(ub => ub.UserId == userId).CountAsync();
+            var earnedBadges = await _context
+                .UserBadges.Where(ub => ub.UserId == userId)
+                .CountAsync();
             var availableBadges = totalBadges - earnedBadges;
 
-            var badgesByType = await _context.UserBadges
-                .Include(ub => ub.Badge)
+            var badgesByType = await _context
+                .UserBadges.Include(ub => ub.Badge)
                 .Where(ub => ub.UserId == userId)
                 .GroupBy(ub => ub.Badge.Type)
                 .Select(g => new { Type = g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.Type, x => x.Count);
 
-            var recentlyEarned = await _context.UserBadges
-                .Include(ub => ub.Badge)
+            var recentlyEarned = await _context
+                .UserBadges.Include(ub => ub.Badge)
                 .Where(ub => ub.UserId == userId && ub.EarnedAt >= DateTime.UtcNow.AddDays(-7))
                 .Select(ub => new UserBadgeResponse
                 {
@@ -293,8 +298,9 @@ public class BadgeService : IBadgeService
         try
         {
             // Check if user already has this badge
-            var existingUserBadge = await _context.UserBadges
-                .FirstOrDefaultAsync(ub => ub.UserId == request.UserId && ub.BadgeId == request.BadgeId);
+            var existingUserBadge = await _context.UserBadges.FirstOrDefaultAsync(ub =>
+                ub.UserId == request.UserId && ub.BadgeId == request.BadgeId
+            );
 
             if (existingUserBadge != null)
             {
@@ -336,9 +342,35 @@ public class BadgeService : IBadgeService
                 request.BadgeId
             );
 
+            // Send email notification
+            try
+            {
+                var user = await _context.Users.FindAsync(request.UserId);
+                if (user != null && !string.IsNullOrEmpty(user.Email))
+                {
+                    await _emailService.SendBadgeAchievementEmailAsync(
+                        user.Email,
+                        user.UserName ?? user.Email,
+                        badge,
+                        request.Reason
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Failed to send badge achievement email to user {UserId}",
+                    request.UserId
+                );
+                // Don't fail the badge award if email fails
+            }
+
             _logger.LogInformation(
                 "Awarded badge {BadgeId} to user {UserId}: {BadgeName}",
-                request.BadgeId, request.UserId, badge.Name
+                request.BadgeId,
+                request.UserId,
+                badge.Name
             );
 
             return new AwardBadgeResponse
@@ -361,16 +393,19 @@ public class BadgeService : IBadgeService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to award badge {BadgeId} to user {UserId}", request.BadgeId, request.UserId);
-            return new AwardBadgeResponse
-            {
-                Success = false,
-                Message = "Failed to award badge"
-            };
+            _logger.LogError(
+                ex,
+                "Failed to award badge {BadgeId} to user {UserId}",
+                request.BadgeId,
+                request.UserId
+            );
+            return new AwardBadgeResponse { Success = false, Message = "Failed to award badge" };
         }
     }
 
-    public async Task<BadgeEligibilityResponse> CheckBadgeEligibilityAsync(CheckBadgeEligibilityRequest request)
+    public async Task<BadgeEligibilityResponse> CheckBadgeEligibilityAsync(
+        CheckBadgeEligibilityRequest request
+    )
     {
         try
         {
@@ -385,8 +420,9 @@ public class BadgeService : IBadgeService
             }
 
             // Check if user already has this badge
-            var hasBadge = await _context.UserBadges
-                .AnyAsync(ub => ub.UserId == request.UserId && ub.BadgeId == request.BadgeId);
+            var hasBadge = await _context.UserBadges.AnyAsync(ub =>
+                ub.UserId == request.UserId && ub.BadgeId == request.BadgeId
+            );
 
             if (hasBadge)
             {
@@ -412,7 +448,12 @@ public class BadgeService : IBadgeService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to check badge eligibility for user {UserId}, badge {BadgeId}", request.UserId, request.BadgeId);
+            _logger.LogError(
+                ex,
+                "Failed to check badge eligibility for user {UserId}, badge {BadgeId}",
+                request.UserId,
+                request.BadgeId
+            );
             return new BadgeEligibilityResponse
             {
                 IsEligible = false,
@@ -425,12 +466,10 @@ public class BadgeService : IBadgeService
     {
         try
         {
-            var badges = await _context.Badges
-                .Where(b => b.IsActive)
-                .ToListAsync();
+            var badges = await _context.Badges.Where(b => b.IsActive).ToListAsync();
 
-            var userBadges = await _context.UserBadges
-                .Where(ub => ub.UserId == userId)
+            var userBadges = await _context
+                .UserBadges.Where(ub => ub.UserId == userId)
                 .ToDictionaryAsync(ub => ub.BadgeId, ub => ub);
 
             var progressList = new List<BadgeProgressResponse>();
@@ -438,21 +477,25 @@ public class BadgeService : IBadgeService
             foreach (var badge in badges)
             {
                 var hasBadge = userBadges.ContainsKey(badge.Id);
-                var progress = hasBadge ? badge.RequiredValue ?? 1 : await CalculateBadgeProgressAsync(userId, badge);
+                var progress = hasBadge
+                    ? badge.RequiredValue ?? 1
+                    : await CalculateBadgeProgressAsync(userId, badge);
                 var required = badge.RequiredValue ?? 1;
 
-                progressList.Add(new BadgeProgressResponse
-                {
-                    BadgeId = badge.Id,
-                    BadgeName = badge.Name,
-                    BadgeDescription = badge.Description,
-                    BadgeType = badge.Type,
-                    CurrentProgress = progress,
-                    RequiredProgress = required,
-                    ProgressPercentage = required > 0 ? (double)progress / required * 100 : 0,
-                    IsEarned = hasBadge,
-                    EarnedAt = hasBadge ? userBadges[badge.Id].EarnedAt : null
-                });
+                progressList.Add(
+                    new BadgeProgressResponse
+                    {
+                        BadgeId = badge.Id,
+                        BadgeName = badge.Name,
+                        BadgeDescription = badge.Description,
+                        BadgeType = badge.Type,
+                        CurrentProgress = progress,
+                        RequiredProgress = required,
+                        ProgressPercentage = required > 0 ? (double)progress / required * 100 : 0,
+                        IsEarned = hasBadge,
+                        EarnedAt = hasBadge ? userBadges[badge.Id].EarnedAt : null
+                    }
+                );
             }
 
             return progressList.OrderBy(b => b.BadgeType).ThenBy(b => b.BadgeName).ToList();
@@ -464,7 +507,10 @@ public class BadgeService : IBadgeService
         }
     }
 
-    public async Task<List<AwardBadgeResponse>> CheckAndAwardEligibleBadgesAsync(string userId, BadgeTriggerEvent triggerEvent)
+    public async Task<List<AwardBadgeResponse>> CheckAndAwardEligibleBadgesAsync(
+        string userId,
+        BadgeTriggerEvent triggerEvent
+    )
     {
         try
         {
@@ -476,10 +522,12 @@ public class BadgeService : IBadgeService
             foreach (var badge in relevantBadges)
             {
                 // Check if user already has this badge
-                var hasBadge = await _context.UserBadges
-                    .AnyAsync(ub => ub.UserId == userId && ub.BadgeId == badge.Id);
+                var hasBadge = await _context.UserBadges.AnyAsync(ub =>
+                    ub.UserId == userId && ub.BadgeId == badge.Id
+                );
 
-                if (hasBadge) continue;
+                if (hasBadge)
+                    continue;
 
                 // Check eligibility
                 var progress = await CalculateBadgeProgressAsync(userId, badge);
@@ -506,7 +554,12 @@ public class BadgeService : IBadgeService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to check and award eligible badges for user {UserId}, event {Event}", userId, triggerEvent);
+            _logger.LogError(
+                ex,
+                "Failed to check and award eligible badges for user {UserId}, event {Event}",
+                userId,
+                triggerEvent
+            );
             return new List<AwardBadgeResponse>();
         }
     }
@@ -523,7 +576,9 @@ public class BadgeService : IBadgeService
             }
 
             // Remove all user badges first
-            var userBadges = await _context.UserBadges.Where(ub => ub.BadgeId == badgeId).ToListAsync();
+            var userBadges = await _context
+                .UserBadges.Where(ub => ub.BadgeId == badgeId)
+                .ToListAsync();
             _context.UserBadges.RemoveRange(userBadges);
 
             // Remove the badge
@@ -540,12 +595,15 @@ public class BadgeService : IBadgeService
         }
     }
 
-    public async Task<List<BadgeResponse>> GetBadgesByTypeAsync(BadgeType type, bool activeOnly = true)
+    public async Task<List<BadgeResponse>> GetBadgesByTypeAsync(
+        BadgeType type,
+        bool activeOnly = true
+    )
     {
         try
         {
             var query = _context.Badges.Where(b => b.Type == type);
-            
+
             if (activeOnly)
                 query = query.Where(b => b.IsActive);
 
@@ -602,23 +660,27 @@ public class BadgeService : IBadgeService
     {
         if (criteria.Contains("games_played"))
         {
-            return await _context.WordGuesses
-                .Where(wg => wg.UserId == userId)
+            return await _context
+                .WordGuesses.Where(wg => wg.UserId == userId)
                 .Select(wg => wg.GameSessionId)
                 .Distinct()
                 .CountAsync();
         }
         else if (criteria.Contains("games_won"))
         {
-            return await _context.GameSessions
-                .Where(gs => gs.WinningTeamId != null &&
-                           gs.Teams.Any(t => t.TeamMembers.Any(m => m.UserId == userId && t.Id == gs.WinningTeamId)))
+            return await _context
+                .GameSessions.Where(gs =>
+                    gs.WinningTeamId != null
+                    && gs.Teams.Any(t =>
+                        t.TeamMembers.Any(m => m.UserId == userId && t.Id == gs.WinningTeamId)
+                    )
+                )
                 .CountAsync();
         }
         else if (criteria.Contains("correct_guesses"))
         {
-            return await _context.WordGuesses
-                .Where(wg => wg.UserId == userId && wg.IsCorrect)
+            return await _context
+                .WordGuesses.Where(wg => wg.UserId == userId && wg.IsCorrect)
                 .CountAsync();
         }
 
@@ -630,15 +692,21 @@ public class BadgeService : IBadgeService
         if (criteria.Contains("perfect_game"))
         {
             // Count games where user made no mistakes
-            return await _context.GameSessions
-                .Where(gs => gs.Teams.Any(t => t.TeamMembers.Any(m => m.UserId == userId && m.MistakesRemaining == 3)))
+            return await _context
+                .GameSessions.Where(gs =>
+                    gs.Teams.Any(t =>
+                        t.TeamMembers.Any(m => m.UserId == userId && m.MistakesRemaining == 3)
+                    )
+                )
                 .CountAsync();
         }
         else if (criteria.Contains("streak"))
         {
             // Calculate current win streak
-            var recentGames = await _context.GameSessions
-                .Where(gs => gs.Teams.Any(t => t.TeamMembers.Any(m => m.UserId == userId)))
+            var recentGames = await _context
+                .GameSessions.Where(gs =>
+                    gs.Teams.Any(t => t.TeamMembers.Any(m => m.UserId == userId))
+                )
                 .OrderByDescending(gs => gs.CreatedAt)
                 .Take(10)
                 .ToListAsync();
@@ -646,7 +714,9 @@ public class BadgeService : IBadgeService
             int streak = 0;
             foreach (var game in recentGames)
             {
-                var userTeam = game.Teams.FirstOrDefault(t => t.TeamMembers.Any(m => m.UserId == userId));
+                var userTeam = game.Teams.FirstOrDefault(t =>
+                    t.TeamMembers.Any(m => m.UserId == userId)
+                );
                 if (userTeam != null && game.WinningTeamId == userTeam.Id)
                 {
                     streak++;
@@ -667,18 +737,16 @@ public class BadgeService : IBadgeService
     {
         if (criteria.Contains("team_player"))
         {
-            return await _context.TeamMembers
-                .Where(tm => tm.UserId == userId)
-                .CountAsync();
+            return await _context.TeamMembers.Where(tm => tm.UserId == userId).CountAsync();
         }
 
         return 0;
     }
 
-    private async Task<int> CalculateAchievementProgressAsync(string userId, string criteria)
+    private Task<int> CalculateAchievementProgressAsync(string userId, string criteria)
     {
         // Generic achievement progress calculation
-        return 0;
+        return Task.FromResult(0);
     }
 
     private async Task<List<Badge>> GetRelevantBadgesForEventAsync(BadgeTriggerEvent triggerEvent)
@@ -698,8 +766,8 @@ public class BadgeService : IBadgeService
         var badges = new List<Badge>();
         foreach (var criteria in relevantCriteria)
         {
-            var matchingBadges = await _context.Badges
-                .Where(b => b.IsActive && b.Criteria.ToLower().Contains(criteria))
+            var matchingBadges = await _context
+                .Badges.Where(b => b.IsActive && b.Criteria.ToLower().Contains(criteria))
                 .ToListAsync();
             badges.AddRange(matchingBadges);
         }
