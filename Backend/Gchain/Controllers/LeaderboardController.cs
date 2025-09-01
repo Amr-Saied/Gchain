@@ -1,8 +1,8 @@
+using System.Security.Claims;
 using Gchain.DTOS;
 using Gchain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace Gchain.Controllers;
 
@@ -42,11 +42,13 @@ public class LeaderboardController : ControllerBase
     {
         try
         {
-            if (request.Page < 1) request.Page = 1;
-            if (request.PageSize < 1 || request.PageSize > 100) request.PageSize = 20;
+            if (request.Page < 1)
+                request.Page = 1;
+            if (request.PageSize < 1 || request.PageSize > 100)
+                request.PageSize = 20;
 
             var leaderboard = await _leaderboardService.GetLeaderboardAsync(request);
-            
+
             // Mark current user in the results
             var currentUserId = GetCurrentUserId();
             if (!string.IsNullOrEmpty(currentUserId))
@@ -59,7 +61,9 @@ public class LeaderboardController : ControllerBase
 
             _logger.LogInformation(
                 "Retrieved leaderboard: Type={Type}, Page={Page}, Count={Count}",
-                request.Type, request.Page, leaderboard.Entries.Count
+                request.Type,
+                request.Page,
+                leaderboard.Entries.Count
             );
 
             return Ok(leaderboard);
@@ -104,7 +108,9 @@ public class LeaderboardController : ControllerBase
 
             _logger.LogInformation(
                 "Retrieved user rank: UserId={UserId}, Type={Type}, Rank={Rank}",
-                userId, type, userRank.UserEntry.Rank
+                userId,
+                type,
+                userRank.UserEntry.Rank
             );
 
             return Ok(userRank);
@@ -151,7 +157,9 @@ public class LeaderboardController : ControllerBase
 
             _logger.LogInformation(
                 "Retrieved current user rank: UserId={UserId}, Type={Type}, Rank={Rank}",
-                currentUserId, type, userRank.UserEntry.Rank
+                currentUserId,
+                type,
+                userRank.UserEntry.Rank
             );
 
             return Ok(userRank);
@@ -211,13 +219,15 @@ public class LeaderboardController : ControllerBase
     {
         try
         {
-            if (count < 1 || count > 50) count = 10;
+            if (count < 1 || count > 50)
+                count = 10;
 
             var topPlayers = await _leaderboardService.GetTopPlayersAsync(type, count, language);
 
             _logger.LogInformation(
                 "Retrieved top players: Type={Type}, Count={Count}",
-                type, topPlayers.Count
+                type,
+                topPlayers.Count
             );
 
             return Ok(topPlayers);
@@ -252,7 +262,8 @@ public class LeaderboardController : ControllerBase
 
             _logger.LogInformation(
                 "Calculated user rank: UserId={UserId}, Rank={Rank}",
-                currentUserId, rank
+                currentUserId,
+                rank
             );
 
             return Ok(new { rank = rank });

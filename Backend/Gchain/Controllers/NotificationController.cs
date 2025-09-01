@@ -1,8 +1,8 @@
+using System.Security.Claims;
 using Gchain.DTOS;
 using Gchain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace Gchain.Controllers;
 
@@ -48,14 +48,20 @@ public class NotificationController : ControllerBase
                 return Unauthorized(new { error = "User not authenticated" });
             }
 
-            if (request.Page < 1) request.Page = 1;
-            if (request.PageSize < 1 || request.PageSize > 100) request.PageSize = 20;
+            if (request.Page < 1)
+                request.Page = 1;
+            if (request.PageSize < 1 || request.PageSize > 100)
+                request.PageSize = 20;
 
-            var notifications = await _notificationService.GetUserNotificationsAsync(currentUserId, request);
+            var notifications = await _notificationService.GetUserNotificationsAsync(
+                currentUserId,
+                request
+            );
 
             _logger.LogInformation(
                 "Retrieved {Count} notifications for user {UserId}",
-                notifications.Notifications.Count, currentUserId
+                notifications.Notifications.Count,
+                currentUserId
             );
 
             return Ok(notifications);
@@ -123,7 +129,10 @@ public class NotificationController : ControllerBase
                 return Unauthorized(new { error = "User not authenticated" });
             }
 
-            var success = await _notificationService.MarkNotificationAsReadAsync(notificationId, currentUserId);
+            var success = await _notificationService.MarkNotificationAsReadAsync(
+                notificationId,
+                currentUserId
+            );
 
             if (!success)
             {
@@ -132,14 +141,19 @@ public class NotificationController : ControllerBase
 
             _logger.LogInformation(
                 "Marked notification {NotificationId} as read for user {UserId}",
-                notificationId, currentUserId
+                notificationId,
+                currentUserId
             );
 
             return Ok(new { success = true, message = "Notification marked as read" });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to mark notification {NotificationId} as read", notificationId);
+            _logger.LogError(
+                ex,
+                "Failed to mark notification {NotificationId} as read",
+                notificationId
+            );
             return StatusCode(500, new { error = "Failed to mark notification as read" });
         }
     }
@@ -154,7 +168,9 @@ public class NotificationController : ControllerBase
     [HttpPost("read-all")]
     [ProducesResponseType(typeof(object), 200)]
     [ProducesResponseType(typeof(object), 401)]
-    public async Task<IActionResult> MarkAllNotificationsAsRead([FromBody] MarkAllNotificationsReadRequest? request = null)
+    public async Task<IActionResult> MarkAllNotificationsAsRead(
+        [FromBody] MarkAllNotificationsReadRequest? request = null
+    )
     {
         try
         {
@@ -164,18 +180,25 @@ public class NotificationController : ControllerBase
                 return Unauthorized(new { error = "User not authenticated" });
             }
 
-            var count = await _notificationService.MarkAllNotificationsAsReadAsync(currentUserId, request);
+            var count = await _notificationService.MarkAllNotificationsAsReadAsync(
+                currentUserId,
+                request
+            );
 
             _logger.LogInformation(
                 "Marked {Count} notifications as read for user {UserId}",
-                count, currentUserId
+                count,
+                currentUserId
             );
 
-            return Ok(new { 
-                success = true, 
-                message = $"Marked {count} notifications as read",
-                count = count
-            });
+            return Ok(
+                new
+                {
+                    success = true,
+                    message = $"Marked {count} notifications as read",
+                    count = count
+                }
+            );
         }
         catch (Exception ex)
         {
@@ -196,7 +219,9 @@ public class NotificationController : ControllerBase
     [ProducesResponseType(typeof(CreateNotificationResponse), 200)]
     [ProducesResponseType(typeof(object), 400)]
     [ProducesResponseType(typeof(object), 401)]
-    public async Task<IActionResult> CreateNotification([FromBody] CreateNotificationRequest request)
+    public async Task<IActionResult> CreateNotification(
+        [FromBody] CreateNotificationRequest request
+    )
     {
         try
         {
@@ -214,7 +239,8 @@ public class NotificationController : ControllerBase
 
             _logger.LogInformation(
                 "Created notification {NotificationId} for user {UserId}",
-                response.NotificationId, request.UserId
+                response.NotificationId,
+                request.UserId
             );
 
             return Ok(response);
@@ -238,7 +264,9 @@ public class NotificationController : ControllerBase
     [ProducesResponseType(typeof(BulkNotificationResponse), 200)]
     [ProducesResponseType(typeof(object), 400)]
     [ProducesResponseType(typeof(object), 401)]
-    public async Task<IActionResult> CreateBulkNotifications([FromBody] BulkNotificationRequest request)
+    public async Task<IActionResult> CreateBulkNotifications(
+        [FromBody] BulkNotificationRequest request
+    )
     {
         try
         {
@@ -251,7 +279,8 @@ public class NotificationController : ControllerBase
 
             _logger.LogInformation(
                 "Created bulk notifications: {SuccessfullySent} sent, {Failed} failed",
-                response.SuccessfullySent, response.FailedToSend
+                response.SuccessfullySent,
+                response.FailedToSend
             );
 
             return Ok(response);
@@ -284,13 +313,20 @@ public class NotificationController : ControllerBase
 
             var count = await _notificationService.DeleteOldNotificationsAsync(daysOld);
 
-            _logger.LogInformation("Deleted {Count} old notifications (older than {DaysOld} days)", count, daysOld);
+            _logger.LogInformation(
+                "Deleted {Count} old notifications (older than {DaysOld} days)",
+                count,
+                daysOld
+            );
 
-            return Ok(new { 
-                success = true, 
-                message = $"Deleted {count} old notifications",
-                count = count
-            });
+            return Ok(
+                new
+                {
+                    success = true,
+                    message = $"Deleted {count} old notifications",
+                    count = count
+                }
+            );
         }
         catch (Exception ex)
         {
