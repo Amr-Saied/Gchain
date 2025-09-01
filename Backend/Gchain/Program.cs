@@ -138,6 +138,8 @@ builder.Services.AddScoped<IGuestAuthService, GuestAuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IGameService, GameService>();
 builder.Services.AddScoped<ITeamService, TeamService>();
+builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 // Register Redis services
 builder.Services.AddSingleton<IRedisService, RedisService>();

@@ -1,8 +1,8 @@
-using Microsoft.AspNetCore.SignalR;
-using Gchain.Interfaces;
-using Gchain.DTOS;
-using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using Gchain.DTOS;
+using Gchain.Interfaces;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.SignalR;
 
 namespace Gchain.Hubs
 {
@@ -40,7 +40,9 @@ namespace Gchain.Hubs
                     return;
                 }
 
-                var isInGame = gameSession.Teams.Any(t => t.TeamMembers.Any(m => m.UserId == userId));
+                var isInGame = gameSession.Teams.Any(t =>
+                    t.TeamMembers.Any(m => m.UserId == userId)
+                );
                 if (!isInGame)
                 {
                     await Clients.Caller.SendAsync("Error", "User not in game");
@@ -49,16 +51,25 @@ namespace Gchain.Hubs
 
                 // Join the game session group
                 await Groups.AddToGroupAsync(Context.ConnectionId, $"game_{gameSessionId}");
-                
-                // Notify other players that user joined
-                await Clients.OthersInGroup($"game_{gameSessionId}").SendAsync("PlayerJoined", new
-                {
-                    UserId = userId,
-                    GameSessionId = gameSessionId,
-                    Timestamp = DateTime.UtcNow
-                });
 
-                _logger.LogInformation("User {UserId} joined game session {GameId} group", userId, gameSessionId);
+                // Notify other players that user joined
+                await Clients
+                    .OthersInGroup($"game_{gameSessionId}")
+                    .SendAsync(
+                        "PlayerJoined",
+                        new
+                        {
+                            UserId = userId,
+                            GameSessionId = gameSessionId,
+                            Timestamp = DateTime.UtcNow
+                        }
+                    );
+
+                _logger.LogInformation(
+                    "User {UserId} joined game session {GameId} group",
+                    userId,
+                    gameSessionId
+                );
             }
             catch (Exception ex)
             {
@@ -75,19 +86,28 @@ namespace Gchain.Hubs
             try
             {
                 var userId = GetCurrentUserId();
-                
+
                 // Remove from group
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"game_{gameSessionId}");
-                
-                // Notify other players that user left
-                await Clients.OthersInGroup($"game_{gameSessionId}").SendAsync("PlayerLeft", new
-                {
-                    UserId = userId,
-                    GameSessionId = gameSessionId,
-                    Timestamp = DateTime.UtcNow
-                });
 
-                _logger.LogInformation("User {UserId} left game session {GameId} group", userId, gameSessionId);
+                // Notify other players that user left
+                await Clients
+                    .OthersInGroup($"game_{gameSessionId}")
+                    .SendAsync(
+                        "PlayerLeft",
+                        new
+                        {
+                            UserId = userId,
+                            GameSessionId = gameSessionId,
+                            Timestamp = DateTime.UtcNow
+                        }
+                    );
+
+                _logger.LogInformation(
+                    "User {UserId} left game session {GameId} group",
+                    userId,
+                    gameSessionId
+                );
             }
             catch (Exception ex)
             {
@@ -111,19 +131,29 @@ namespace Gchain.Hubs
 
                 // Submit the word guess
                 var success = await _gameService.SubmitWordGuessAsync(gameSessionId, word, userId);
-                
+
                 if (success)
                 {
                     // Broadcast the word guess to all players in the game
-                    await Clients.Group($"game_{gameSessionId}").SendAsync("WordGuessSubmitted", new
-                    {
-                        UserId = userId,
-                        Word = word,
-                        GameSessionId = gameSessionId,
-                        Timestamp = DateTime.UtcNow
-                    });
+                    await Clients
+                        .Group($"game_{gameSessionId}")
+                        .SendAsync(
+                            "WordGuessSubmitted",
+                            new
+                            {
+                                UserId = userId,
+                                Word = word,
+                                GameSessionId = gameSessionId,
+                                Timestamp = DateTime.UtcNow
+                            }
+                        );
 
-                    _logger.LogInformation("Word guess submitted: {Word} by user {UserId} in game {GameId}", word, userId, gameSessionId);
+                    _logger.LogInformation(
+                        "Word guess submitted: {Word} by user {UserId} in game {GameId}",
+                        word,
+                        userId,
+                        gameSessionId
+                    );
                 }
                 else
                 {
@@ -132,7 +162,12 @@ namespace Gchain.Hubs
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to submit word guess for user {UserId} in game {GameId}", GetCurrentUserId(), gameSessionId);
+                _logger.LogError(
+                    ex,
+                    "Failed to submit word guess for user {UserId} in game {GameId}",
+                    GetCurrentUserId(),
+                    gameSessionId
+                );
                 await Clients.Caller.SendAsync("Error", "Failed to submit word guess");
             }
         }
@@ -153,21 +188,36 @@ namespace Gchain.Hubs
 
                 // Process team revival
                 var success = await _gameService.ProcessTeamRevivalAsync(gameSessionId, teamId);
-                
-                // Broadcast revival result to all players
-                await Clients.Group($"game_{gameSessionId}").SendAsync("TeamRevivalProcessed", new
-                {
-                    TeamId = teamId,
-                    Success = success,
-                    GameSessionId = gameSessionId,
-                    Timestamp = DateTime.UtcNow
-                });
 
-                _logger.LogInformation("Team {TeamId} revival {Result} in game {GameId}", teamId, success ? "succeeded" : "failed", gameSessionId);
+                // Broadcast revival result to all players
+                await Clients
+                    .Group($"game_{gameSessionId}")
+                    .SendAsync(
+                        "TeamRevivalProcessed",
+                        new
+                        {
+                            TeamId = teamId,
+                            Success = success,
+                            GameSessionId = gameSessionId,
+                            Timestamp = DateTime.UtcNow
+                        }
+                    );
+
+                _logger.LogInformation(
+                    "Team {TeamId} revival {Result} in game {GameId}",
+                    teamId,
+                    success ? "succeeded" : "failed",
+                    gameSessionId
+                );
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to process team revival for team {TeamId} in game {GameId}", teamId, gameSessionId);
+                _logger.LogError(
+                    ex,
+                    "Failed to process team revival for team {TeamId} in game {GameId}",
+                    teamId,
+                    gameSessionId
+                );
                 await Clients.Caller.SendAsync("Error", "Failed to process team revival");
             }
         }
@@ -186,7 +236,11 @@ namespace Gchain.Hubs
         public override async Task OnConnectedAsync()
         {
             var userId = GetCurrentUserId();
-            _logger.LogInformation("Client connected: {ConnectionId}, User: {UserId}", Context.ConnectionId, userId);
+            _logger.LogInformation(
+                "Client connected: {ConnectionId}, User: {UserId}",
+                Context.ConnectionId,
+                userId
+            );
             await base.OnConnectedAsync();
         }
 
@@ -196,7 +250,11 @@ namespace Gchain.Hubs
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
             var userId = GetCurrentUserId();
-            _logger.LogInformation("Client disconnected: {ConnectionId}, User: {UserId}", Context.ConnectionId, userId);
+            _logger.LogInformation(
+                "Client disconnected: {ConnectionId}, User: {UserId}",
+                Context.ConnectionId,
+                userId
+            );
             await base.OnDisconnectedAsync(exception);
         }
     }
