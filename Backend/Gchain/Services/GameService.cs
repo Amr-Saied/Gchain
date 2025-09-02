@@ -13,18 +13,21 @@ namespace Gchain.Services
         private readonly ILogger<GameService> _logger;
         private readonly IWordCacheService _wordCacheService;
         private readonly ITurnTimerService _turnTimerService;
+        private readonly IGameStateCacheService _gameStateCacheService;
 
         public GameService(
             ApplicationDbContext context,
             ILogger<GameService> logger,
             IWordCacheService wordCacheService,
-            ITurnTimerService turnTimerService
+            ITurnTimerService turnTimerService,
+            IGameStateCacheService gameStateCacheService
         )
         {
             _context = context;
             _logger = logger;
             _wordCacheService = wordCacheService;
             _turnTimerService = turnTimerService;
+            _gameStateCacheService = gameStateCacheService;
         }
 
         public async Task<CreateGameResponse> CreateGameAsync(
@@ -188,60 +191,87 @@ namespace Gchain.Services
                     };
                 }
 
-                // Check if user is already in the game
-                if (gameSession.Teams.Any(t => t.TeamMembers.Any(m => m.UserId == userId)))
-                {
-                    return new JoinTeamResponse
-                    {
-                        Success = false,
-                        Message = "User already in game"
-                    };
-                }
-
-                // Check if game is full
-                var totalPlayers = gameSession.Teams.Sum(t => t.TeamMembers.Count);
-                if (totalPlayers >= 6)
-                {
-                    return new JoinTeamResponse { Success = false, Message = "Game is full" };
-                }
-
-                // Find the team
-                var team = gameSession.Teams.FirstOrDefault(t => t.Id == request.TeamId);
-                if (team == null)
+                // Find the team user wants to join
+                var targetTeam = gameSession.Teams.FirstOrDefault(t => t.Id == request.TeamId);
+                if (targetTeam == null)
                 {
                     return new JoinTeamResponse { Success = false, Message = "Invalid team" };
                 }
 
-                if (team.TeamMembers.Count >= 3)
+                // Check if target team is full (max 5 members per team)
+                if (targetTeam.TeamMembers.Count >= 5)
                 {
-                    return new JoinTeamResponse { Success = false, Message = "Team is full" };
+                    return new JoinTeamResponse
+                    {
+                        Success = false,
+                        Message = "Team is full (maximum 5 players)"
+                    };
                 }
 
-                // Add user to team
+                // Check if user is already in the game
+                var existingTeamMember = gameSession
+                    .Teams.SelectMany(t => t.TeamMembers)
+                    .FirstOrDefault(m => m.UserId == userId);
+
+                if (existingTeamMember != null)
+                {
+                    // User is already in a team - handle team swapping
+                    var currentTeam = gameSession.Teams.First(t =>
+                        t.Id == existingTeamMember.TeamId
+                    );
+
+                    // Check if user is trying to join the same team
+                    if (currentTeam.Id == targetTeam.Id)
+                    {
+                        return new JoinTeamResponse
+                        {
+                            Success = false,
+                            Message = "You are already in this team"
+                        };
+                    }
+
+                    // Remove user from current team
+                    currentTeam.TeamMembers.Remove(existingTeamMember);
+                    _context.TeamMembers.Remove(existingTeamMember);
+
+                    _logger.LogInformation(
+                        "User {UserId} left team {CurrentTeamId} to join team {TargetTeamId}",
+                        userId,
+                        currentTeam.Id,
+                        targetTeam.Id
+                    );
+                }
+
+                // Add user to target team
                 var teamMember = new TeamMember
                 {
                     UserId = userId,
-                    TeamId = team.Id,
+                    TeamId = targetTeam.Id,
                     MistakesRemaining = gameSession.MaxLivesPerPlayer,
                     IsActive = true,
-                    JoinOrder = team.TeamMembers.Count + 1
+                    JoinOrder = targetTeam.TeamMembers.Count + 1
                 };
 
                 _context.TeamMembers.Add(teamMember);
                 await _context.SaveChangesAsync();
 
+                var actionMessage =
+                    existingTeamMember != null
+                        ? "Successfully switched teams"
+                        : "Successfully joined team";
+
                 _logger.LogInformation(
                     "User {UserId} joined team {TeamId} in game {GameId}",
                     userId,
-                    team.Id,
+                    targetTeam.Id,
                     gameSession.Id
                 );
 
                 return new JoinTeamResponse
                 {
                     Success = true,
-                    Message = "Successfully joined team",
-                    TeamId = team.Id,
+                    Message = actionMessage,
+                    TeamId = targetTeam.Id,
                     Game = MapToGameSessionDto(gameSession)
                 };
             }
@@ -279,31 +309,39 @@ namespace Gchain.Services
                     return new LeaveGameResponse { Success = false, Message = "User not in game" };
                 }
 
-                // Remove user from team
                 var team = gameSession.Teams.First(t => t.Id == teamMember.TeamId);
-                team.TeamMembers.Remove(teamMember);
-                _context.TeamMembers.Remove(teamMember);
+                var isGameActive = await IsGameActiveAsync(request.GameSessionId);
 
-                // If team is empty, remove it
-                if (team.TeamMembers.Count == 0)
+                // Handle different scenarios based on game state
+                if (isGameActive)
                 {
-                    gameSession.Teams.Remove(team);
-                    _context.Teams.Remove(team);
+                    // ACTIVE GAME: Handle player leaving during gameplay
+                    await HandlePlayerLeavingActiveGameAsync(
+                        request.GameSessionId,
+                        userId,
+                        teamMember,
+                        team
+                    );
                 }
-
-                // If no teams left, delete the game
-                if (gameSession.Teams.Count == 0)
+                else
                 {
-                    _context.GameSessions.Remove(gameSession);
-                    _logger.LogInformation(
-                        "Game {GameId} deleted - no players left",
-                        gameSession.Id
+                    // WAITING GAME: Handle player leaving during lobby phase
+                    await HandlePlayerLeavingWaitingGameAsync(
+                        request.GameSessionId,
+                        userId,
+                        teamMember,
+                        team
                     );
                 }
 
                 await _context.SaveChangesAsync();
 
-                _logger.LogInformation("User {UserId} left game {GameId}", userId, gameSession.Id);
+                _logger.LogInformation(
+                    "User {UserId} left game {GameId} (Active: {IsActive})",
+                    userId,
+                    gameSession.Id,
+                    isGameActive
+                );
 
                 return new LeaveGameResponse { Success = true, Message = "Successfully left game" };
             }
@@ -314,7 +352,138 @@ namespace Gchain.Services
             }
         }
 
-        public async Task<bool> StartGameAsync(int gameSessionId, string userId)
+        private async Task HandlePlayerLeavingActiveGameAsync(
+            int gameSessionId,
+            string userId,
+            TeamMember teamMember,
+            Team team
+        )
+        {
+            try
+            {
+                _logger.LogInformation(
+                    "Handling player {UserId} leaving active game {GameId}",
+                    userId,
+                    gameSessionId
+                );
+
+                // 1. Clean up turn timer for the leaving player
+                await CleanupPlayerTurnTimerAsync(gameSessionId, userId);
+
+                // 2. Mark player as inactive instead of removing them
+                teamMember.IsActive = false;
+                teamMember.MistakesRemaining = 0;
+
+                // 3. Check if game can continue
+                var canContinue = await CanGameContinueAsync(gameSessionId);
+
+                if (!canContinue)
+                {
+                    // 4. End game if team has no active players
+                    await EndGameGracefullyAsync(
+                        gameSessionId,
+                        "Team has no active players remaining"
+                    );
+                }
+                else
+                {
+                    // 5. Recalculate turn order with remaining active players
+                    await RecalculateTurnOrderAsync(gameSessionId);
+
+                    // 6. Continue game with remaining players
+                    await NotifyPlayersGameUpdateAsync(
+                        gameSessionId,
+                        $"Player {userId} left the game. Game continues with remaining players."
+                    );
+                }
+
+                // 7. Update game state cache - mark player as inactive
+                var gameState = await _gameStateCacheService.GetGameStateAsync(gameSessionId);
+                if (gameState != null)
+                {
+                    // Update the game state to reflect player leaving
+                    await _gameStateCacheService.CacheGameStateAsync(gameSessionId, gameState);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to handle player leaving active game {GameId}",
+                    gameSessionId
+                );
+                throw;
+            }
+        }
+
+        private async Task HandlePlayerLeavingWaitingGameAsync(
+            int gameSessionId,
+            string userId,
+            TeamMember teamMember,
+            Team team
+        )
+        {
+            try
+            {
+                _logger.LogInformation(
+                    "Handling player {UserId} leaving waiting game {GameId}",
+                    userId,
+                    gameSessionId
+                );
+
+                // 1. Remove user from team completely (safe in lobby phase)
+                team.TeamMembers.Remove(teamMember);
+                _context.TeamMembers.Remove(teamMember);
+
+                // 2. FIXED: Don't delete empty teams - preserve them for new players
+                if (team.TeamMembers.Count == 0)
+                {
+                    _logger.LogInformation(
+                        "Team {TeamId} is now empty but preserved for new players",
+                        team.Id
+                    );
+                    // Team is kept in the game for new players to join
+                }
+
+                // 3. Check if game has any players left (teams are preserved even when empty)
+                var gameSession = await _context
+                    .GameSessions.Include(gs => gs.Teams)
+                    .ThenInclude(t => t.TeamMembers)
+                    .FirstOrDefaultAsync(gs => gs.Id == gameSessionId);
+
+                if (gameSession != null)
+                {
+                    // Count total active players across all teams
+                    var totalPlayers = gameSession.Teams.Sum(t => t.TeamMembers.Count);
+                    
+                    if (totalPlayers == 0)
+                    {
+                        // No players left - delete the entire game session
+                        _context.GameSessions.Remove(gameSession);
+                        _logger.LogInformation("Game {GameId} deleted - no players left", gameSessionId);
+                    }
+                    else
+                    {
+                        // 4. Notify remaining players
+                        await NotifyPlayersGameUpdateAsync(
+                            gameSessionId,
+                            $"Player {userId} left the lobby. Waiting for more players..."
+                        );
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to handle player leaving waiting game {GameId}",
+                    gameSessionId
+                );
+                throw;
+            }
+        }
+
+        public async Task<StartGameResponse> StartGameAsync(int gameSessionId, string userId)
         {
             try
             {
@@ -324,11 +493,25 @@ namespace Gchain.Services
                     .FirstOrDefaultAsync(gs => gs.Id == gameSessionId);
 
                 if (gameSession == null)
-                    return false;
+                {
+                    return new StartGameResponse
+                    {
+                        Success = false,
+                        Message = "Game session not found",
+                        ErrorReason = "GameNotFound"
+                    };
+                }
 
                 // Check if user is in the game
                 if (!gameSession.Teams.Any(t => t.TeamMembers.Any(m => m.UserId == userId)))
-                    return false;
+                {
+                    return new StartGameResponse
+                    {
+                        Success = false,
+                        Message = "User not in game",
+                        ErrorReason = "UserNotInGame"
+                    };
+                }
 
                 // Check if both teams have at least one member
                 var team1 = gameSession.Teams.FirstOrDefault(t => t.Name == "Team 1");
@@ -336,11 +519,45 @@ namespace Gchain.Services
 
                 if (team1?.TeamMembers.Count == 0 || team2?.TeamMembers.Count == 0)
                 {
+                    var emptyTeams = new List<string>();
+                    if (team1?.TeamMembers.Count == 0)
+                        emptyTeams.Add("Team 1");
+                    if (team2?.TeamMembers.Count == 0)
+                        emptyTeams.Add("Team 2");
+
                     _logger.LogWarning(
-                        "Cannot start game {GameId} - teams are empty",
-                        gameSessionId
+                        "Cannot start game {GameId} - empty teams: {EmptyTeams}",
+                        gameSessionId,
+                        string.Join(", ", emptyTeams)
                     );
-                    return false;
+                    return new StartGameResponse
+                    {
+                        Success = false,
+                        Message =
+                            $"Cannot start game - empty teams: {string.Join(", ", emptyTeams)}",
+                        ErrorReason = "EmptyTeams"
+                    };
+                }
+
+                // Additional validation: Check if teams have reasonable player distribution
+                var team1Count = team1?.TeamMembers.Count ?? 0;
+                var team2Count = team2?.TeamMembers.Count ?? 0;
+                var totalPlayers = team1Count + team2Count;
+
+                if (totalPlayers < 2)
+                {
+                    _logger.LogWarning(
+                        "Cannot start game {GameId} - not enough players (minimum 2 required, current: {TotalPlayers})",
+                        gameSessionId,
+                        totalPlayers
+                    );
+                    return new StartGameResponse
+                    {
+                        Success = false,
+                        Message =
+                            $"Not enough players to start game (minimum 2 required, current: {totalPlayers})",
+                        ErrorReason = "NotEnoughPlayers"
+                    };
                 }
 
                 // Get a random word for the first round
@@ -360,12 +577,21 @@ namespace Gchain.Services
                     gameSessionId,
                     userId
                 );
-                return true;
+                return new StartGameResponse
+                {
+                    Success = true,
+                    Message = "Game started successfully"
+                };
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to start game {GameId}", gameSessionId);
-                return false;
+                return new StartGameResponse
+                {
+                    Success = false,
+                    Message = "An error occurred while starting the game",
+                    ErrorReason = "InternalError"
+                };
             }
         }
 
@@ -673,6 +899,194 @@ namespace Gchain.Services
                     gameSessionId
                 );
                 return false;
+            }
+        }
+
+        // Helper methods for game state management
+        private async Task<bool> IsGameActiveAsync(int gameSessionId)
+        {
+            try
+            {
+                var gameSession = await _context.GameSessions.FirstOrDefaultAsync(gs =>
+                    gs.Id == gameSessionId
+                );
+
+                return gameSession != null
+                    && gameSession.IsActive
+                    && !string.IsNullOrEmpty(gameSession.CurrentWord);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to check if game {GameId} is active", gameSessionId);
+                return false;
+            }
+        }
+
+        private async Task<bool> CanGameContinueAsync(int gameSessionId)
+        {
+            try
+            {
+                var gameSession = await _context
+                    .GameSessions.Include(gs => gs.Teams)
+                    .ThenInclude(t => t.TeamMembers)
+                    .FirstOrDefaultAsync(gs => gs.Id == gameSessionId);
+
+                if (gameSession == null)
+                    return false;
+
+                // Check if both teams have at least one active player
+                var team1 = gameSession.Teams.FirstOrDefault(t => t.Name == "Team 1");
+                var team2 = gameSession.Teams.FirstOrDefault(t => t.Name == "Team 2");
+
+                var team1HasPlayers = team1?.TeamMembers.Any(m => m.IsActive) ?? false;
+                var team2HasPlayers = team2?.TeamMembers.Any(m => m.IsActive) ?? false;
+
+                return team1HasPlayers && team2HasPlayers;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to check if game {GameId} can continue",
+                    gameSessionId
+                );
+                return false;
+            }
+        }
+
+        private async Task CleanupPlayerTurnTimerAsync(int gameSessionId, string userId)
+        {
+            try
+            {
+                // Check if the leaving player is the current player
+                var currentPlayer = await _turnTimerService.GetCurrentPlayerAsync(gameSessionId);
+                if (currentPlayer == userId)
+                {
+                    // Stop the current turn timer
+                    await _turnTimerService.EndTurnAsync(gameSessionId);
+                    _logger.LogInformation(
+                        "Stopped turn timer for leaving player {UserId} in game {GameId}",
+                        userId,
+                        gameSessionId
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to cleanup turn timer for player {UserId} in game {GameId}",
+                    userId,
+                    gameSessionId
+                );
+            }
+        }
+
+        private Task NotifyPlayersGameUpdateAsync(
+            int gameSessionId,
+            string message,
+            object? data = null
+        )
+        {
+            try
+            {
+                _logger.LogInformation(
+                    "Game update notification for game {GameId}: {Message}",
+                    gameSessionId,
+                    message
+                );
+                // SignalR notifications will be handled by the GameHub when called from controllers
+                // This method provides a placeholder for future direct SignalR integration
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to notify players of game update for game {GameId}",
+                    gameSessionId
+                );
+            }
+
+            return Task.CompletedTask;
+        }
+
+        private async Task RecalculateTurnOrderAsync(int gameSessionId)
+        {
+            try
+            {
+                var gameSession = await _context
+                    .GameSessions.Include(gs => gs.Teams)
+                    .ThenInclude(t => t.TeamMembers)
+                    .FirstOrDefaultAsync(gs => gs.Id == gameSessionId);
+
+                if (gameSession == null)
+                    return;
+
+                // Get all active players from both teams
+                var activePlayers = gameSession
+                    .Teams.SelectMany(t => t.TeamMembers)
+                    .Where(m => m.IsActive)
+                    .OrderBy(m => m.TeamId) // Team 1 first, then Team 2
+                    .ThenBy(m => m.Id) // Then by member ID for consistent ordering
+                    .ToList();
+
+                if (activePlayers.Any())
+                {
+                    // Update turn order in cache
+                    var currentPlayer = activePlayers.First();
+                    await _gameStateCacheService.UpdateCurrentPlayerAsync(
+                        gameSessionId,
+                        currentPlayer.UserId
+                    );
+
+                    _logger.LogInformation(
+                        "Recalculated turn order for game {GameId}. Current player: {UserId}",
+                        gameSessionId,
+                        currentPlayer.UserId
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to recalculate turn order for game {GameId}",
+                    gameSessionId
+                );
+            }
+        }
+
+        private async Task EndGameGracefullyAsync(int gameSessionId, string reason)
+        {
+            try
+            {
+                var gameSession = await _context.GameSessions.FirstOrDefaultAsync(gs =>
+                    gs.Id == gameSessionId
+                );
+
+                if (gameSession != null)
+                {
+                    gameSession.IsActive = false;
+                    gameSession.WinningTeamId = null; // No winner if ended due to player leaving
+
+                    // Stop turn timer
+                    await _turnTimerService.StopTurnTimerAsync(gameSessionId);
+
+                    await _context.SaveChangesAsync();
+
+                    _logger.LogInformation(
+                        "Game {GameId} ended gracefully due to: {Reason}",
+                        gameSessionId,
+                        reason
+                    );
+
+                    // Notify players
+                    await NotifyPlayersGameUpdateAsync(gameSessionId, $"Game ended: {reason}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to end game {GameId} gracefully", gameSessionId);
             }
         }
 

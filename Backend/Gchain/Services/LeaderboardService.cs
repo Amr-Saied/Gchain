@@ -24,10 +24,10 @@ public class LeaderboardService : ILeaderboardService
         try
         {
             var query = BuildLeaderboardQuery(request);
-            
+
             var totalCount = await query.CountAsync();
             var totalPages = (int)Math.Ceiling((double)totalCount / request.PageSize);
-            
+
             var entries = await query
                 .Skip((request.Page - 1) * request.PageSize)
                 .Take(request.PageSize)
@@ -105,52 +105,54 @@ public class LeaderboardService : ILeaderboardService
         try
         {
             var totalPlayers = await _context.Users.CountAsync();
-            
+
             var weekAgo = DateTime.UtcNow.AddDays(-7);
             var monthAgo = DateTime.UtcNow.AddDays(-30);
-            
-            var activePlayersThisWeek = await _context.WordGuesses
-                .Where(wg => wg.CreatedAt >= weekAgo)
-                .Select(wg => wg.UserId)
-                .Distinct()
-                .CountAsync();
-                
-            var activePlayersThisMonth = await _context.WordGuesses
-                .Where(wg => wg.CreatedAt >= monthAgo)
+
+            var activePlayersThisWeek = await _context
+                .WordGuesses.Where(wg => wg.CreatedAt >= weekAgo)
                 .Select(wg => wg.UserId)
                 .Distinct()
                 .CountAsync();
 
-            var totalGamesPlayed = await _context.WordGuesses
+            var activePlayersThisMonth = await _context
+                .WordGuesses.Where(wg => wg.CreatedAt >= monthAgo)
+                .Select(wg => wg.UserId)
+                .Distinct()
+                .CountAsync();
+
+            var totalGamesPlayed = await _context
+                .WordGuesses.Select(wg => wg.GameSessionId)
+                .Distinct()
+                .CountAsync();
+
+            var totalGamesThisWeek = await _context
+                .WordGuesses.Where(wg => wg.CreatedAt >= weekAgo)
                 .Select(wg => wg.GameSessionId)
                 .Distinct()
                 .CountAsync();
 
-            var totalGamesThisWeek = await _context.WordGuesses
-                .Where(wg => wg.CreatedAt >= weekAgo)
-                .Select(wg => wg.GameSessionId)
-                .Distinct()
-                .CountAsync();
-
-            var totalGamesThisMonth = await _context.WordGuesses
-                .Where(wg => wg.CreatedAt >= monthAgo)
+            var totalGamesThisMonth = await _context
+                .WordGuesses.Where(wg => wg.CreatedAt >= monthAgo)
                 .Select(wg => wg.GameSessionId)
                 .Distinct()
                 .CountAsync();
 
             // Calculate average win rate
-            var gamesWithWinners = await _context.GameSessions
-                .Where(gs => gs.WinningTeamId != null)
+            var gamesWithWinners = await _context
+                .GameSessions.Where(gs => gs.WinningTeamId != null)
                 .CountAsync();
 
-            var averageWinRate = totalGamesPlayed > 0 ? (double)gamesWithWinners / totalGamesPlayed * 100 : 0;
+            var averageWinRate =
+                totalGamesPlayed > 0 ? (double)gamesWithWinners / totalGamesPlayed * 100 : 0;
 
             // Get most popular language
-            var mostPopularLanguage = await _context.GameSessions
-                .GroupBy(gs => gs.Language)
-                .OrderByDescending(g => g.Count())
-                .Select(g => g.Key.ToString())
-                .FirstOrDefaultAsync() ?? "English";
+            var mostPopularLanguage =
+                await _context
+                    .GameSessions.GroupBy(gs => gs.Language)
+                    .OrderByDescending(g => g.Count())
+                    .Select(g => g.Key.ToString())
+                    .FirstOrDefaultAsync() ?? "English";
 
             return new LeaderboardStatsResponse
             {
@@ -172,7 +174,13 @@ public class LeaderboardService : ILeaderboardService
         }
     }
 
-    public async Task UpdateUserStatsAsync(string userId, int gameSessionId, bool won, int score, string language)
+    public Task UpdateUserStatsAsync(
+        string userId,
+        int gameSessionId,
+        bool won,
+        int score,
+        string language
+    )
     {
         try
         {
@@ -180,7 +188,11 @@ public class LeaderboardService : ILeaderboardService
             // For now, we'll just log the update
             _logger.LogInformation(
                 "User {UserId} completed game {GameId}: Won={Won}, Score={Score}, Language={Language}",
-                userId, gameSessionId, won, score, language
+                userId,
+                gameSessionId,
+                won,
+                score,
+                language
             );
 
             // Future enhancement: Update cached user statistics
@@ -191,9 +203,15 @@ public class LeaderboardService : ILeaderboardService
             _logger.LogError(ex, "Failed to update user stats for user {UserId}", userId);
             throw;
         }
+
+        return Task.CompletedTask;
     }
 
-    public async Task<List<LeaderboardEntry>> GetTopPlayersAsync(LeaderboardType type, int count = 10, string? language = null)
+    public async Task<List<LeaderboardEntry>> GetTopPlayersAsync(
+        LeaderboardType type,
+        int count = 10,
+        string? language = null
+    )
     {
         try
         {
@@ -220,12 +238,16 @@ public class LeaderboardService : ILeaderboardService
         try
         {
             var userStats = await GetUserGameStatsAsync(userId);
-            
+
             // Simple ranking system based on experience points
-            if (userStats.ExperiencePoints >= 1000) return "Master";
-            if (userStats.ExperiencePoints >= 500) return "Expert";
-            if (userStats.ExperiencePoints >= 200) return "Advanced";
-            if (userStats.ExperiencePoints >= 50) return "Intermediate";
+            if (userStats.ExperiencePoints >= 1000)
+                return "Master";
+            if (userStats.ExperiencePoints >= 500)
+                return "Expert";
+            if (userStats.ExperiencePoints >= 200)
+                return "Advanced";
+            if (userStats.ExperiencePoints >= 50)
+                return "Intermediate";
             return "Beginner";
         }
         catch (Exception ex)
@@ -237,39 +259,43 @@ public class LeaderboardService : ILeaderboardService
 
     private IQueryable<LeaderboardEntry> BuildLeaderboardQuery(GetLeaderboardRequest request)
     {
-        var baseQuery = from user in _context.Users
-                        select new LeaderboardEntry
-                        {
-                            UserId = user.Id,
-                            UserName = user.UserName ?? user.Email ?? "Unknown",
-                            ProfilePictureUrl = null, // Can be enhanced later
-                            AccountCreated = user.CreatedAt,
-                            TotalGamesPlayed = _context.WordGuesses
-                                .Where(wg => wg.UserId == user.Id)
-                                .Select(wg => wg.GameSessionId)
-                                .Distinct()
-                                .Count(),
-                            TotalGamesWon = _context.GameSessions
-                                .Where(gs => gs.WinningTeamId != null &&
-                                           gs.Teams.Any(t => t.TeamMembers.Any(m => m.UserId == user.Id && t.Id == gs.WinningTeamId)))
-                                .Count(),
-                            TotalScore = _context.WordGuesses
-                                .Where(wg => wg.UserId == user.Id && wg.IsCorrect)
-                                .Count() * 10, // Simple scoring: 10 points per correct guess
-                            BadgesEarned = _context.UserBadges
-                                .Where(ub => ub.UserId == user.Id)
-                                .Count(),
-                            ExperiencePoints = _context.WordGuesses
-                                .Where(wg => wg.UserId == user.Id)
-                                .Select(wg => wg.GameSessionId)
-                                .Distinct()
-                                .Count() * 10, // 10 XP per game played
-                            LastGamePlayed = _context.WordGuesses
-                                .Where(wg => wg.UserId == user.Id)
-                                .OrderByDescending(wg => wg.CreatedAt)
-                                .Select(wg => wg.CreatedAt)
-                                .FirstOrDefault()
-                        };
+        var baseQuery =
+            from user in _context.Users
+            select new LeaderboardEntry
+            {
+                UserId = user.Id,
+                UserName = user.UserName ?? user.Email ?? "Unknown",
+                ProfilePictureUrl = null, // Can be enhanced later
+                AccountCreated = user.CreatedAt,
+                TotalGamesPlayed = _context
+                    .WordGuesses.Where(wg => wg.UserId == user.Id)
+                    .Select(wg => wg.GameSessionId)
+                    .Distinct()
+                    .Count(),
+                TotalGamesWon = _context
+                    .GameSessions.Where(gs =>
+                        gs.WinningTeamId != null
+                        && gs.Teams.Any(t =>
+                            t.TeamMembers.Any(m => m.UserId == user.Id && t.Id == gs.WinningTeamId)
+                        )
+                    )
+                    .Count(),
+                TotalScore =
+                    _context.WordGuesses.Where(wg => wg.UserId == user.Id && wg.IsCorrect).Count()
+                    * 10, // Simple scoring: 10 points per correct guess
+                BadgesEarned = _context.UserBadges.Where(ub => ub.UserId == user.Id).Count(),
+                ExperiencePoints =
+                    _context
+                        .WordGuesses.Where(wg => wg.UserId == user.Id)
+                        .Select(wg => wg.GameSessionId)
+                        .Distinct()
+                        .Count() * 10, // 10 XP per game played
+                LastGamePlayed = _context
+                    .WordGuesses.Where(wg => wg.UserId == user.Id)
+                    .OrderByDescending(wg => wg.CreatedAt)
+                    .Select(wg => wg.CreatedAt)
+                    .FirstOrDefault()
+            };
 
         // Apply filters based on request type
         switch (request.Type)
@@ -311,39 +337,60 @@ public class LeaderboardService : ILeaderboardService
             BadgesEarned = entry.BadgesEarned,
             ExperiencePoints = entry.ExperiencePoints,
             LastGamePlayed = entry.LastGamePlayed,
-            WinRate = entry.TotalGamesPlayed > 0 ? (double)entry.TotalGamesWon / entry.TotalGamesPlayed * 100 : 0,
-            CurrentRank = entry.ExperiencePoints >= 1000 ? "Master" :
-                         entry.ExperiencePoints >= 500 ? "Expert" :
-                         entry.ExperiencePoints >= 200 ? "Advanced" :
-                         entry.ExperiencePoints >= 50 ? "Intermediate" : "Beginner"
+            WinRate =
+                entry.TotalGamesPlayed > 0
+                    ? (double)entry.TotalGamesWon / entry.TotalGamesPlayed * 100
+                    : 0,
+            CurrentRank =
+                entry.ExperiencePoints >= 1000
+                    ? "Master"
+                    : entry.ExperiencePoints >= 500
+                        ? "Expert"
+                        : entry.ExperiencePoints >= 200
+                            ? "Advanced"
+                            : entry.ExperiencePoints >= 50
+                                ? "Intermediate"
+                                : "Beginner"
         });
 
         // Order by different criteria based on type
         return request.Type switch
         {
-            LeaderboardType.WinRate => queryWithCalculations.OrderByDescending(e => e.WinRate).ThenByDescending(e => e.TotalGamesPlayed),
-            LeaderboardType.Badges => queryWithCalculations.OrderByDescending(e => e.BadgesEarned).ThenByDescending(e => e.ExperiencePoints),
-            LeaderboardType.Experience => queryWithCalculations.OrderByDescending(e => e.ExperiencePoints),
-            _ => queryWithCalculations.OrderByDescending(e => e.ExperiencePoints).ThenByDescending(e => e.WinRate)
+            LeaderboardType.WinRate
+                => queryWithCalculations
+                    .OrderByDescending(e => e.WinRate)
+                    .ThenByDescending(e => e.TotalGamesPlayed),
+            LeaderboardType.Badges
+                => queryWithCalculations
+                    .OrderByDescending(e => e.BadgesEarned)
+                    .ThenByDescending(e => e.ExperiencePoints),
+            LeaderboardType.Experience
+                => queryWithCalculations.OrderByDescending(e => e.ExperiencePoints),
+            _
+                => queryWithCalculations
+                    .OrderByDescending(e => e.ExperiencePoints)
+                    .ThenByDescending(e => e.WinRate)
         };
     }
 
     private async Task<GameStatsSummary> GetUserGameStatsAsync(string userId)
     {
-        var totalGamesPlayed = await _context.WordGuesses
-            .Where(wg => wg.UserId == userId)
+        var totalGamesPlayed = await _context
+            .WordGuesses.Where(wg => wg.UserId == userId)
             .Select(wg => wg.GameSessionId)
             .Distinct()
             .CountAsync();
 
-        var totalGamesWon = await _context.GameSessions
-            .Where(gs => gs.WinningTeamId != null &&
-                       gs.Teams.Any(t => t.TeamMembers.Any(m => m.UserId == userId && t.Id == gs.WinningTeamId)))
+        var totalGamesWon = await _context
+            .GameSessions.Where(gs =>
+                gs.WinningTeamId != null
+                && gs.Teams.Any(t =>
+                    t.TeamMembers.Any(m => m.UserId == userId && t.Id == gs.WinningTeamId)
+                )
+            )
             .CountAsync();
 
-        var badgesEarned = await _context.UserBadges
-            .Where(ub => ub.UserId == userId)
-            .CountAsync();
+        var badgesEarned = await _context.UserBadges.Where(ub => ub.UserId == userId).CountAsync();
 
         return new GameStatsSummary
         {

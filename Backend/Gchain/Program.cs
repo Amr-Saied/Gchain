@@ -154,7 +154,7 @@ builder.Services.AddScoped<ITurnTimerService, TurnTimerService>();
 builder.Services.AddScoped<IWordCacheService, WordCacheService>();
 
 // Register background services
-builder.Services.AddScoped<ICleanupService, CleanupService>();
+builder.Services.AddSingleton<ICleanupService, CleanupService>();
 builder.Services.AddHostedService<BackgroundServiceHost>();
 
 // Register Hugging Face service
@@ -174,7 +174,16 @@ builder.Services.AddCors(options =>
         "AllowAll",
         policy =>
         {
-            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader().AllowCredentials(); // Required for SignalR
+            policy
+                .WithOrigins(
+                    "http://localhost:3000",
+                    "http://localhost:3001",
+                    "http://localhost:5173",
+                    "http://localhost:8080"
+                )
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .AllowCredentials(); // Required for SignalR
         }
     );
 });

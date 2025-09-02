@@ -9,10 +9,7 @@ namespace Gchain.Services;
 /// </summary>
 public class CleanupService : ICleanupService
 {
-    private readonly ApplicationDbContext _context;
-    private readonly ITurnTimerService _turnTimerService;
-    private readonly IGameStateCacheService _gameStateCacheService;
-    private readonly INotificationService _notificationService;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<CleanupService> _logger;
     private readonly Timer? _timer;
     private volatile bool _isRunning = false;
@@ -24,17 +21,11 @@ public class CleanupService : ICleanupService
     public DateTime? LastCleanupTime => _lastCleanupTime;
 
     public CleanupService(
-        ApplicationDbContext context,
-        ITurnTimerService turnTimerService,
-        IGameStateCacheService gameStateCacheService,
-        INotificationService notificationService,
+        IServiceProvider serviceProvider,
         ILogger<CleanupService> logger
     )
     {
-        _context = context;
-        _turnTimerService = turnTimerService;
-        _gameStateCacheService = gameStateCacheService;
-        _notificationService = notificationService;
+        _serviceProvider = serviceProvider;
         _logger = logger;
 
         // Create timer that runs every 5 minutes
@@ -103,8 +94,13 @@ public class CleanupService : ICleanupService
         {
             _logger.LogDebug("Starting cleanup operations");
 
+            using var scope = _serviceProvider.CreateScope();
+            var turnTimerService = scope.ServiceProvider.GetRequiredService<ITurnTimerService>();
+            var gameStateCacheService = scope.ServiceProvider.GetRequiredService<IGameStateCacheService>();
+            var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+
             // 1. Clean up expired turn timers
-            var expiredTimers = await _turnTimerService.CleanupExpiredTimersAsync();
+            var expiredTimers = await turnTimerService.CleanupExpiredTimersAsync();
             totalCleaned += expiredTimers;
 
             // 2. Clean up expired user sessions
@@ -112,7 +108,7 @@ public class CleanupService : ICleanupService
             totalCleaned += expiredSessions;
 
             // 3. Clean up old notifications
-            var oldNotifications = await _notificationService.DeleteOldNotificationsAsync(30);
+            var oldNotifications = await notificationService.DeleteOldNotificationsAsync(30);
             totalCleaned += oldNotifications;
 
             // 4. Clean up abandoned game sessions
@@ -150,7 +146,10 @@ public class CleanupService : ICleanupService
     {
         try
         {
-            var expiredSessions = await _context
+            using var scope = _serviceProvider.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+            var expiredSessions = await context
                 .UserSessions.Where(us =>
                     us.ExpiresAt.HasValue && us.ExpiresAt.Value < DateTime.UtcNow
                 )
@@ -158,8 +157,8 @@ public class CleanupService : ICleanupService
 
             if (expiredSessions.Any())
             {
-                _context.UserSessions.RemoveRange(expiredSessions);
-                await _context.SaveChangesAsync();
+                context.UserSessions.RemoveRange(expiredSessions);
+                await context.SaveChangesAsync();
 
                 _logger.LogInformation(
                     "Cleaned up {Count} expired user sessions",
@@ -181,10 +180,13 @@ public class CleanupService : ICleanupService
     {
         try
         {
+            using var scope = _serviceProvider.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
             // Find game sessions that have been inactive for more than 2 hours
             var cutoffTime = DateTime.UtcNow.AddHours(-2);
 
-            var abandonedGames = await _context
+            var abandonedGames = await context
                 .GameSessions.Where(gs => gs.IsActive && gs.CreatedAt < cutoffTime)
                 .ToListAsync();
 
@@ -199,10 +201,12 @@ public class CleanupService : ICleanupService
                     // Note: GameSession doesn't have UpdatedAt or EndedAt properties
 
                     // Clean up game state cache
-                    await _gameStateCacheService.DeleteGameStateAsync(game.Id);
+                    using var cleanupScope = _serviceProvider.CreateScope();
+                    var gameStateCacheService = cleanupScope.ServiceProvider.GetRequiredService<IGameStateCacheService>();
+                    var turnTimerService = cleanupScope.ServiceProvider.GetRequiredService<ITurnTimerService>();
 
-                    // End any active turn timers
-                    await _turnTimerService.EndTurnAsync(game.Id);
+                    await gameStateCacheService.DeleteGameStateAsync(game.Id);
+                    await turnTimerService.EndTurnAsync(game.Id);
 
                     cleanedCount++;
                 }
@@ -214,7 +218,7 @@ public class CleanupService : ICleanupService
 
             if (cleanedCount > 0)
             {
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
                 _logger.LogInformation("Cleaned up {Count} abandoned game sessions", cleanedCount);
             }
 
@@ -231,14 +235,20 @@ public class CleanupService : ICleanupService
     {
         try
         {
+            using var scope = _serviceProvider.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
             // Get all active game sessions from database
-            var activeGameIds = await _context
+            var activeGameIds = await context
                 .GameSessions.Where(gs => gs.IsActive)
                 .Select(gs => gs.Id)
                 .ToListAsync();
 
             // Get all cached game states
-            var cachedGameIds = await _gameStateCacheService.GetActiveGameSessionsAsync();
+            using var cacheScope = _serviceProvider.CreateScope();
+            var gameStateCacheService = cacheScope.ServiceProvider.GetRequiredService<IGameStateCacheService>();
+            
+            var cachedGameIds = await gameStateCacheService.GetActiveGameSessionsAsync();
 
             // Find orphaned cache entries (cached but not in database)
             var orphanedIds = cachedGameIds.Except(activeGameIds).ToList();
@@ -249,7 +259,7 @@ public class CleanupService : ICleanupService
             {
                 try
                 {
-                    await _gameStateCacheService.DeleteGameStateAsync(gameId);
+                    await gameStateCacheService.DeleteGameStateAsync(gameId);
                     cleanedCount++;
                 }
                 catch (Exception ex)

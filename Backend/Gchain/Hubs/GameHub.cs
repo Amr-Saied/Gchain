@@ -247,6 +247,79 @@ namespace Gchain.Hubs
         /// <summary>
         /// Called when a client disconnects
         /// </summary>
+        /// <summary>
+        /// Notify all players in a game session about an update
+        /// </summary>
+        public async Task NotifyGameUpdate(int gameSessionId, string message, object? data = null)
+        {
+            try
+            {
+                var updateData = new
+                {
+                    GameSessionId = gameSessionId,
+                    Message = message,
+                    Data = data,
+                    Timestamp = DateTime.UtcNow
+                };
+
+                await Clients.Group($"game_{gameSessionId}").SendAsync("GameUpdate", updateData);
+                _logger.LogInformation("Sent game update to session {GameSessionId}: {Message}", gameSessionId, message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending game update to session {GameSessionId}", gameSessionId);
+            }
+        }
+
+        /// <summary>
+        /// Notify players that someone left the game
+        /// </summary>
+        public async Task NotifyPlayerLeft(int gameSessionId, string userId, string reason = "Player left the game")
+        {
+            try
+            {
+                var notificationData = new
+                {
+                    GameSessionId = gameSessionId,
+                    UserId = userId,
+                    Reason = reason,
+                    Timestamp = DateTime.UtcNow,
+                    Type = "PlayerLeft"
+                };
+
+                await Clients.Group($"game_{gameSessionId}").SendAsync("PlayerLeft", notificationData);
+                _logger.LogInformation("Notified players in game {GameSessionId} that user {UserId} left", gameSessionId, userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error notifying players about user leaving game {GameSessionId}", gameSessionId);
+            }
+        }
+
+        /// <summary>
+        /// Notify players about game state changes
+        /// </summary>
+        public async Task NotifyGameStateChange(int gameSessionId, object gameState)
+        {
+            try
+            {
+                var stateData = new
+                {
+                    GameSessionId = gameSessionId,
+                    GameState = gameState,
+                    Timestamp = DateTime.UtcNow,
+                    Type = "GameStateChange"
+                };
+
+                await Clients.Group($"game_{gameSessionId}").SendAsync("GameStateChange", stateData);
+                _logger.LogInformation("Sent game state change to session {GameSessionId}", gameSessionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending game state change to session {GameSessionId}", gameSessionId);
+            }
+        }
+
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
             var userId = GetCurrentUserId();

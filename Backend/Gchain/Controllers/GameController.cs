@@ -1,8 +1,10 @@
 using System.Security.Claims;
 using Gchain.DTOS;
+using Gchain.Hubs;
 using Gchain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 
 namespace Gchain.Controllers;
 
@@ -16,11 +18,13 @@ public class GameController : ControllerBase
 {
     private readonly IGameService _gameService;
     private readonly ILogger<GameController> _logger;
+    private readonly IHubContext<GameHub> _gameHubContext;
 
-    public GameController(IGameService gameService, ILogger<GameController> logger)
+    public GameController(IGameService gameService, ILogger<GameController> logger, IHubContext<GameHub> gameHubContext)
     {
         _gameService = gameService;
         _logger = logger;
+        _gameHubContext = gameHubContext;
     }
 
     /// <summary>
@@ -208,6 +212,25 @@ public class GameController : ControllerBase
                     userId,
                     request.GameSessionId
                 );
+
+                // Send SignalR notification to other players
+                try
+                {
+                    await _gameHubContext.Clients.Group($"game_{request.GameSessionId}")
+                        .SendAsync("PlayerLeft", new
+                        {
+                            UserId = userId,
+                            GameSessionId = request.GameSessionId,
+                            Reason = "Player left the game",
+                            Timestamp = DateTime.UtcNow,
+                            Type = "PlayerLeft"
+                        });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send SignalR notification for player leaving game {GameSessionId}", request.GameSessionId);
+                }
+
                 return Ok(response);
             }
             else
@@ -242,22 +265,20 @@ public class GameController : ControllerBase
                 return Unauthorized(new { error = "User not authenticated" });
             }
 
-            var success = await _gameService.StartGameAsync(gameSessionId, userId);
+            var response = await _gameService.StartGameAsync(gameSessionId, userId);
 
-            if (success)
+            if (response.Success)
             {
                 _logger.LogInformation(
                     "Game {GameSessionId} started by user {UserId}",
                     gameSessionId,
                     userId
                 );
-                return Ok(new { message = "Game started successfully" });
+                return Ok(response);
             }
             else
             {
-                return BadRequest(
-                    new { error = "Cannot start game. Check minimum player requirements." }
-                );
+                return BadRequest(response);
             }
         }
         catch (Exception ex)

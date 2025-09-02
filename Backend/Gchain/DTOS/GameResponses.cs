@@ -21,6 +21,13 @@ namespace Gchain.DTOS
         public string Message { get; set; } = string.Empty;
     }
 
+    public class StartGameResponse
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public string? ErrorReason { get; set; }
+    }
+
     public class GameSessionResponse
     {
         public int Id { get; set; }

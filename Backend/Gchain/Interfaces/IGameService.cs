@@ -35,7 +35,7 @@ namespace Gchain.Interfaces
         /// <summary>
         /// Start a game session
         /// </summary>
-        Task<bool> StartGameAsync(int gameSessionId, string userId);
+        Task<StartGameResponse> StartGameAsync(int gameSessionId, string userId);
 
         /// <summary>
         /// End a game session early
