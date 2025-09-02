@@ -1,5 +1,6 @@
 using System.Text;
 using Gchain.Data;
+using Gchain.Hubs;
 using Gchain.Interfaces;
 using Gchain.Models;
 using Gchain.Services;
@@ -105,6 +106,9 @@ builder.Services.Configure<RedisSettings>(builder.Configuration.GetSection("Redi
 // Configure Hugging Face settings
 builder.Services.Configure<HuggingFaceSettings>(builder.Configuration.GetSection("HuggingFace"));
 
+// Configure Email settings
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
+
 builder
     .Services.AddAuthentication(options =>
     {
@@ -135,6 +139,12 @@ builder.Services.AddScoped<ConfigurationService>();
 builder.Services.AddScoped<IGoogleOAuthService, GoogleOAuthService>();
 builder.Services.AddScoped<IGuestAuthService, GuestAuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IGameService, GameService>();
+builder.Services.AddScoped<ITeamService, TeamService>();
+builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IBadgeService, BadgeService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
 
 // Register Redis services
 builder.Services.AddSingleton<IRedisService, RedisService>();
@@ -142,6 +152,10 @@ builder.Services.AddScoped<IGameStateCacheService, GameStateCacheService>();
 builder.Services.AddScoped<IRateLimitService, RateLimitService>();
 builder.Services.AddScoped<ITurnTimerService, TurnTimerService>();
 builder.Services.AddScoped<IWordCacheService, WordCacheService>();
+
+// Register background services
+builder.Services.AddSingleton<ICleanupService, CleanupService>();
+builder.Services.AddHostedService<BackgroundServiceHost>();
 
 // Register Hugging Face service
 builder.Services.AddHttpClient<HuggingFaceService>();
@@ -160,10 +174,22 @@ builder.Services.AddCors(options =>
         "AllowAll",
         policy =>
         {
-            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+            policy
+                .WithOrigins(
+                    "http://localhost:3000",
+                    "http://localhost:3001",
+                    "http://localhost:5173",
+                    "http://localhost:8080"
+                )
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .AllowCredentials(); // Required for SignalR
         }
     );
 });
+
+// Add SignalR services
+builder.Services.AddSignalR();
 
 var app = builder.Build();
 
@@ -189,4 +215,9 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHealthChecks("/health");
+
+// Map SignalR hubs
+app.MapHub<GameHub>("/gamehub");
+app.MapHub<ChatHub>("/chathub");
+
 app.Run();

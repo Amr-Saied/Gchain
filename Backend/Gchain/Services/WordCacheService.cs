@@ -472,4 +472,94 @@ public class WordCacheService : IWordCacheService
             _ => new List<string>()
         };
     }
+
+    public Task<string> GetRandomWordAsync(GameLanguage language)
+    {
+        try
+        {
+            var commonWords = GetCommonWords(language);
+            if (!commonWords.Any())
+            {
+                return Task.FromResult(language == GameLanguage.EN ? "word" : "كلمة");
+            }
+
+            var random = new Random();
+            var randomIndex = random.Next(0, commonWords.Count);
+            var randomWord = commonWords[randomIndex];
+
+            _logger.LogInformation(
+                "Generated random word '{Word}' for language {Language}",
+                randomWord,
+                language
+            );
+            return Task.FromResult(randomWord);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get random word for language {Language}", language);
+            return Task.FromResult(language == GameLanguage.EN ? "word" : "كلمة");
+        }
+    }
+
+    public async Task<(double similarityScore, bool isValid)> ValidateWordAssociationAsync(
+        string currentWord,
+        string guessedWord,
+        GameLanguage language
+    )
+    {
+        try
+        {
+            // For now, implement a simple validation logic
+            // In a real implementation, this would use semantic similarity from HuggingFace
+
+            // Check if words are the same (invalid)
+            if (string.Equals(currentWord, guessedWord, StringComparison.OrdinalIgnoreCase))
+            {
+                return (0.0, false);
+            }
+
+            // Check if guessed word exists in dictionary
+            var wordExists = await IsWordInDictionaryAsync(guessedWord, language);
+            if (!wordExists)
+            {
+                return (0.0, false);
+            }
+
+            // Simple similarity check based on word length and common letters
+            var similarityScore = CalculateSimpleSimilarity(currentWord, guessedWord);
+
+            // Consider valid if similarity is above threshold
+            var isValid = similarityScore > 0.3; // 30% similarity threshold
+
+            _logger.LogInformation(
+                "Word association validation: '{CurrentWord}' -> '{GuessedWord}' = {SimilarityScore:F2} (Valid: {IsValid})",
+                currentWord,
+                guessedWord,
+                similarityScore,
+                isValid
+            );
+
+            return (similarityScore, isValid);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to validate word association");
+            return (0.0, false);
+        }
+    }
+
+    private double CalculateSimpleSimilarity(string word1, string word2)
+    {
+        // Simple similarity calculation based on common characters
+        var chars1 = word1.ToLowerInvariant().ToCharArray();
+        var chars2 = word2.ToLowerInvariant().ToCharArray();
+
+        var commonChars = chars1.Intersect(chars2).Count();
+        var totalChars = Math.Max(chars1.Length, chars2.Length);
+
+        if (totalChars == 0)
+            return 0.0;
+
+        return (double)commonChars / totalChars;
+    }
 }

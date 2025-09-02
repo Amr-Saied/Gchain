@@ -104,6 +104,26 @@ public interface IWordCacheService
     /// <param name="language">Language context</param>
     /// <returns>New usage count</returns>
     Task<long> TrackWordUsageAsync(string word, GameLanguage language);
+
+    /// <summary>
+    /// Get a random word for the game
+    /// </summary>
+    /// <param name="language">Language to get word from</param>
+    /// <returns>Random word</returns>
+    Task<string> GetRandomWordAsync(GameLanguage language);
+
+    /// <summary>
+    /// Validate word association with current game word
+    /// </summary>
+    /// <param name="currentWord">Current game word</param>
+    /// <param name="guessedWord">Word to validate</param>
+    /// <param name="language">Language context</param>
+    /// <returns>Similarity score and validation result</returns>
+    Task<(double similarityScore, bool isValid)> ValidateWordAssociationAsync(
+        string currentWord,
+        string guessedWord,
+        GameLanguage language
+    );
 }
 
 /// <summary>
