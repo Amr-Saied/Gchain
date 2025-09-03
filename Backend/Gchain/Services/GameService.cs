@@ -455,12 +455,14 @@ namespace Gchain.Services
                 {
                     // Count total active players across all teams
                     var totalPlayers = gameSession.Teams.Sum(t => t.TeamMembers.Count);
-                    
                     if (totalPlayers == 0)
                     {
                         // No players left - delete the entire game session
                         _context.GameSessions.Remove(gameSession);
-                        _logger.LogInformation("Game {GameId} deleted - no players left", gameSessionId);
+                        _logger.LogInformation(
+                            "Game {GameId} deleted - no players left",
+                            gameSessionId
+                        );
                     }
                     else
                     {
@@ -564,11 +566,27 @@ namespace Gchain.Services
                 var word = await _wordCacheService.GetRandomWordAsync(gameSession.Language);
                 gameSession.CurrentWord = word;
 
-                // Start turn timer
-                await _turnTimerService.StartTurnTimerAsync(
-                    gameSessionId,
-                    gameSession.TurnTimeLimitSeconds
-                );
+                // Determine and set the initial current player, then start timer for that player
+                var initialPlayer = gameSession
+                    .Teams.SelectMany(t => t.TeamMembers)
+                    .Where(m => m.IsActive)
+                    .OrderBy(m => m.TeamId)
+                    .ThenBy(m => m.Id)
+                    .FirstOrDefault();
+
+                if (initialPlayer != null)
+                {
+                    await _gameStateCacheService.UpdateCurrentPlayerAsync(
+                        gameSessionId,
+                        initialPlayer.UserId
+                    );
+
+                    await _turnTimerService.StartTurnAsync(
+                        gameSessionId,
+                        initialPlayer.UserId,
+                        gameSession.TurnTimeLimitSeconds
+                    );
+                }
 
                 await _context.SaveChangesAsync();
 
@@ -707,6 +725,29 @@ namespace Gchain.Services
                 if (gameSession == null || !gameSession.IsActive)
                     return false;
 
+                // Enforce turn ownership
+                var currentPlayerId = await _turnTimerService.GetCurrentPlayerAsync(gameSessionId);
+                if (string.IsNullOrEmpty(currentPlayerId) || currentPlayerId != userId)
+                {
+                    _logger.LogWarning(
+                        "Submit guess rejected: not user's turn. User {UserId}, current {Current}",
+                        userId,
+                        currentPlayerId
+                    );
+                    return false;
+                }
+
+                // Enforce active timer (turn not expired)
+                var isExpired = await _turnTimerService.IsTurnExpiredAsync(gameSessionId);
+                if (isExpired)
+                {
+                    _logger.LogWarning(
+                        "Submit guess rejected: turn expired for game {GameId}",
+                        gameSessionId
+                    );
+                    return false;
+                }
+
                 // Find user's team
                 var teamMember = gameSession
                     .Teams.SelectMany(t => t.TeamMembers)
@@ -714,6 +755,16 @@ namespace Gchain.Services
 
                 if (teamMember == null)
                     return false;
+
+                if (!teamMember.IsActive)
+                {
+                    _logger.LogWarning(
+                        "Submit guess rejected: inactive player {UserId} in game {GameId}",
+                        userId,
+                        gameSessionId
+                    );
+                    return false;
+                }
 
                 // Check if word is valid (semantic similarity to current word)
                 var (similarityScore, isValid) =
@@ -755,6 +806,9 @@ namespace Gchain.Services
                     userId,
                     gameSessionId
                 );
+
+                // Advance to next active player and restart timer
+                await AdvanceToNextPlayerAsync(gameSession, gameSessionId);
                 return true;
             }
             catch (Exception ex)
@@ -766,6 +820,85 @@ namespace Gchain.Services
                     gameSessionId
                 );
                 return false;
+            }
+        }
+
+        private async Task AdvanceToNextPlayerAsync(GameSession gameSession, int gameSessionId)
+        {
+            try
+            {
+                // Determine current player and team
+                var currentPlayerId = await _turnTimerService.GetCurrentPlayerAsync(gameSessionId);
+
+                // Build team -> active members ordered by joinOrder
+                var teamToMembers = gameSession.Teams.ToDictionary(
+                    t => t,
+                    t => t.TeamMembers.Where(m => m.IsActive).OrderBy(m => m.JoinOrder).ToList()
+                );
+
+                var anyActive = teamToMembers.Values.Any(list => list.Count > 0);
+                if (!anyActive)
+                {
+                    await _turnTimerService.EndTurnAsync(gameSessionId);
+                    return;
+                }
+
+                // Identify current team
+                var currentTeam = gameSession.Teams.FirstOrDefault(t =>
+                    t.TeamMembers.Any(m => m.UserId == currentPlayerId)
+                );
+
+                // Choose next team: alternate to the other team if it has active players; otherwise keep same team
+                Team nextTeam;
+                if (currentTeam != null)
+                {
+                    var otherTeam = gameSession.Teams.First(t => t.Id != currentTeam.Id);
+                    var otherHasActive = teamToMembers[otherTeam].Count > 0;
+                    nextTeam = otherHasActive ? otherTeam : currentTeam;
+                }
+                else
+                {
+                    // If no current team, pick Team 1 if it has players, else Team 2
+                    nextTeam = gameSession
+                        .Teams.OrderBy(t => t.Id)
+                        .First(t => teamToMembers[t].Count > 0);
+                }
+
+                // Within chosen team, rotate to next active member by joinOrder
+                var members = teamToMembers[nextTeam];
+                TeamMember nextPlayer;
+                if (currentTeam != null && currentTeam.Id == nextTeam.Id)
+                {
+                    // Rotate within same team
+                    var idx = members.FindIndex(m => m.UserId == currentPlayerId);
+                    var nextIdx = idx >= 0 ? (idx + 1) % members.Count : 0;
+                    nextPlayer = members[nextIdx];
+                }
+                else
+                {
+                    // Switched team: start from the first active member by joinOrder
+                    nextPlayer = members.First();
+                }
+
+                await _gameStateCacheService.UpdateCurrentPlayerAsync(
+                    gameSessionId,
+                    nextPlayer.UserId
+                );
+
+                // Restart timer for next player
+                await _turnTimerService.StartTurnAsync(
+                    gameSessionId,
+                    nextPlayer.UserId,
+                    gameSession.TurnTimeLimitSeconds
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to advance to next player for game {GameId}",
+                    gameSessionId
+                );
             }
         }
 
