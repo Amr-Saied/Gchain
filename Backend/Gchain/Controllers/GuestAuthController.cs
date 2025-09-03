@@ -154,66 +154,72 @@ public class GuestAuthController : ControllerBase
         );
     }
 
-    // TEMPORARY TESTING ENDPOINT: Creates a dummy guest user and joins them to game 6, team 1
-    // COMMENTED OUT - May be needed for future testing
-    // [HttpPost("test-dummy-user")]
-    // [ProducesResponseType(typeof(object), 200)]
-    // [ProducesResponseType(typeof(object), 500)]
-    // public async Task<IActionResult> CreateDummyUserForTesting()
-    // {
-    //     try
-    //     {
-    //         _logger.LogInformation("Creating dummy guest user for testing");
+    /// <summary>
+    /// TEMP: Create a dummy guest user and join a specific game/team (for testing)
+    /// </summary>
+    /// <remarks>Use only for manual testing via Swagger.</remarks>
+    /// <response code="200">Dummy user created and joined successfully</response>
+    /// <response code="400">Failed to create or join</response>
+    [HttpPost("test-dummy-user")]
+    [ProducesResponseType(typeof(object), 200)]
+    [ProducesResponseType(typeof(object), 400)]
+    public async Task<IActionResult> CreateDummyUserForTesting(
+        [FromBody] JoinTeamRequest joinRequest
+    )
+    {
+        try
+        {
+            _logger.LogInformation("Creating dummy guest user for testing");
 
-    //         // Create a dummy guest user
-    //         var username = $"TestGuest_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
-    //         var (user, success) = await _userService.CreateGuestUserAsync(username, null);
+            // Create a dummy guest user
+            var username = $"TestGuest_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+            var (user, success) = await _userService.CreateGuestUserAsync(username, null);
 
-    //         if (!success)
-    //         {
-    //             return BadRequest(new { error = "Failed to create dummy guest user" });
-    //         }
+            if (!success)
+            {
+                return BadRequest(new { error = "Failed to create dummy guest user" });
+            }
 
-    //         // Join the user to game 6, team 1
-    //         var joinRequest = new JoinTeamRequest { GameSessionId = 6, TeamId = 11 };
+            // Join the user to requested game/team
+            var joinResponse = await _gameService.JoinTeamAsync(joinRequest, user.Id);
 
-    //         var joinResponse = await _gameService.JoinTeamAsync(joinRequest, user.Id);
+            if (!joinResponse.Success)
+            {
+                return BadRequest(
+                    new
+                    {
+                        error = "Failed to join dummy user to game",
+                        details = joinResponse.Message
+                    }
+                );
+            }
 
-    //         if (!joinResponse.Success)
-    //         {
-    //             return BadRequest(
-    //                 new
-    //                 {
-    //                     error = "Failed to join dummy user to game",
-    //                     details = joinResponse.Message
-    //                 }
-    //             );
-    //         }
+            _logger.LogInformation(
+                "Successfully created dummy guest user {Username} and joined to game {GameId}, team {TeamId}",
+                username,
+                joinRequest.GameSessionId,
+                joinRequest.TeamId
+            );
 
-    //         _logger.LogInformation(
-    //             "Successfully created dummy guest user {Username} and joined to game 6, team 1",
-    //             username
-    //         );
-
-    //         return Ok(
-    //             new
-    //             {
-    //                 message = "Dummy guest user created and joined successfully",
-    //                 username = username,
-    //                 userId = user.Id,
-    //                 gameSessionId = 6,
-    //                 teamId = 1,
-    //                 joinResponse = joinResponse
-    //             }
-    //         );
-    //     }
-    //     catch (Exception ex)
-    //     {
-    //         _logger.LogError(ex, "Failed to create dummy guest user for testing");
-    //         return StatusCode(
-    //             500,
-    //             new { error = "Failed to create dummy user", details = ex.Message }
-    //         );
-    //     }
-    // }
+            return Ok(
+                new
+                {
+                    message = "Dummy guest user created and joined successfully",
+                    username = username,
+                    userId = user.Id,
+                    gameSessionId = joinRequest.GameSessionId,
+                    teamId = joinRequest.TeamId,
+                    joinResponse = joinResponse
+                }
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create dummy guest user for testing");
+            return StatusCode(
+                500,
+                new { error = "Failed to create dummy user", details = ex.Message }
+            );
+        }
+    }
 }

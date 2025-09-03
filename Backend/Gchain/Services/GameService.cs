@@ -920,9 +920,30 @@ namespace Gchain.Services
                     return false;
 
                 // Find current player and apply timeout penalty
-                // This would typically be handled by the turn timer service
-                // For now, we'll just log the timeout
-                _logger.LogInformation("Turn timeout processed for game {GameId}", gameSessionId);
+                var currentPlayerId = await _turnTimerService.GetCurrentPlayerAsync(gameSessionId);
+                if (!string.IsNullOrEmpty(currentPlayerId))
+                {
+                    var member = gameSession
+                        .Teams.SelectMany(t => t.TeamMembers)
+                        .FirstOrDefault(m => m.UserId == currentPlayerId);
+                    if (member != null && member.IsActive)
+                    {
+                        member.MistakesRemaining = Math.Max(0, member.MistakesRemaining - 1);
+                        if (member.MistakesRemaining == 0)
+                        {
+                            member.IsActive = false;
+                        }
+                        await _context.SaveChangesAsync();
+                    }
+                }
+
+                // Advance to next player/team and restart timer
+                await NextTurnAsync(gameSessionId);
+
+                _logger.LogInformation(
+                    "Turn timeout processed and advanced for game {GameId}",
+                    gameSessionId
+                );
 
                 return true;
             }
@@ -1029,6 +1050,32 @@ namespace Gchain.Services
                 _logger.LogError(
                     ex,
                     "Failed to advance to next round for game {GameId}",
+                    gameSessionId
+                );
+                return false;
+            }
+        }
+
+        public async Task<bool> NextTurnAsync(int gameSessionId)
+        {
+            try
+            {
+                var gameSession = await _context
+                    .GameSessions.Include(gs => gs.Teams)
+                    .ThenInclude(t => t.TeamMembers)
+                    .FirstOrDefaultAsync(gs => gs.Id == gameSessionId);
+
+                if (gameSession == null || !gameSession.IsActive)
+                    return false;
+
+                await AdvanceToNextPlayerAsync(gameSession, gameSessionId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to advance next turn for game {GameId}",
                     gameSessionId
                 );
                 return false;
