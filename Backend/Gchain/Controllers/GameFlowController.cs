@@ -12,11 +12,17 @@ namespace Gchain.Controllers
     public class GameFlowController : ControllerBase
     {
         private readonly IGameService _gameService;
+        private readonly ITurnTimerService _turnTimerService;
         private readonly ILogger<GameFlowController> _logger;
 
-        public GameFlowController(IGameService gameService, ILogger<GameFlowController> logger)
+        public GameFlowController(
+            IGameService gameService,
+            ITurnTimerService turnTimerService,
+            ILogger<GameFlowController> logger
+        )
         {
             _gameService = gameService;
+            _turnTimerService = turnTimerService;
             _logger = logger;
         }
 
@@ -35,6 +41,48 @@ namespace Gchain.Controllers
                 if (string.IsNullOrEmpty(userId))
                 {
                     return Unauthorized(new { error = "User not authenticated" });
+                }
+
+                // Specific validations for clearer errors
+                var currentPlayerId = await _turnTimerService.GetCurrentPlayerAsync(
+                    request.GameSessionId
+                );
+                if (string.IsNullOrEmpty(currentPlayerId))
+                {
+                    return BadRequest(new { error = "No active turn" });
+                }
+
+                if (currentPlayerId != userId)
+                {
+                    return BadRequest(new { error = "Not your turn" });
+                }
+
+                var turnExpired = await _turnTimerService.IsTurnExpiredAsync(request.GameSessionId);
+                if (turnExpired)
+                {
+                    return BadRequest(new { error = "Turn expired" });
+                }
+
+                // Ensure user is part of this game and active
+                var gameState = await _gameService.GetCurrentGameStateAsync(request.GameSessionId);
+                if (gameState == null || !gameState.IsActive)
+                {
+                    return BadRequest(new { error = "Game is not active" });
+                }
+
+                var isInGame = gameState.Teams.Any(t => t.TeamMembers.Any(m => m.UserId == userId));
+                if (!isInGame)
+                {
+                    return BadRequest(new { error = "You are not in this game" });
+                }
+
+                var isActiveMember = gameState
+                    .Teams.SelectMany(t => t.TeamMembers)
+                    .First(m => m.UserId == userId)
+                    .IsActive;
+                if (!isActiveMember)
+                {
+                    return BadRequest(new { error = "You are inactive in this game" });
                 }
 
                 var success = await _gameService.SubmitWordGuessAsync(

@@ -147,6 +147,26 @@ public class UserService : IUserService
     }
 
     /// <summary>
+    /// Finds an active user session by its refresh token
+    /// </summary>
+    public async Task<UserSession?> FindActiveSessionByRefreshTokenAsync(string refreshToken)
+    {
+        try
+        {
+            return await _dbContext
+                .UserSessions.Include(us => us.User)
+                .FirstOrDefaultAsync(us =>
+                    us.RefreshToken == refreshToken && us.IsActive && us.ExpiresAt > DateTime.UtcNow
+                );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to find session by refresh token");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Gets user profile data including game statistics
     /// </summary>
     public async Task<UserProfileData> GetUserProfileAsync(string userId)

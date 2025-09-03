@@ -53,6 +53,13 @@ public interface IUserService
     );
 
     /// <summary>
+    /// Finds an active user session by its refresh token
+    /// </summary>
+    /// <param name="refreshToken">Refresh token</param>
+    /// <returns>User session if found, otherwise null</returns>
+    Task<UserSession?> FindActiveSessionByRefreshTokenAsync(string refreshToken);
+
+    /// <summary>
     /// Checks if a browser already has an active guest session
     /// </summary>
     /// <param name="browserId">Browser identifier (IP + User-Agent hash)</param>
