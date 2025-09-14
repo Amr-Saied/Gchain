@@ -263,18 +263,30 @@ namespace Gchain.Hubs
                 };
 
                 await Clients.Group($"game_{gameSessionId}").SendAsync("GameUpdate", updateData);
-                _logger.LogInformation("Sent game update to session {GameSessionId}: {Message}", gameSessionId, message);
+                _logger.LogInformation(
+                    "Sent game update to session {GameSessionId}: {Message}",
+                    gameSessionId,
+                    message
+                );
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending game update to session {GameSessionId}", gameSessionId);
+                _logger.LogError(
+                    ex,
+                    "Error sending game update to session {GameSessionId}",
+                    gameSessionId
+                );
             }
         }
 
         /// <summary>
         /// Notify players that someone left the game
         /// </summary>
-        public async Task NotifyPlayerLeft(int gameSessionId, string userId, string reason = "Player left the game")
+        public async Task NotifyPlayerLeft(
+            int gameSessionId,
+            string userId,
+            string reason = "Player left the game"
+        )
         {
             try
             {
@@ -287,12 +299,22 @@ namespace Gchain.Hubs
                     Type = "PlayerLeft"
                 };
 
-                await Clients.Group($"game_{gameSessionId}").SendAsync("PlayerLeft", notificationData);
-                _logger.LogInformation("Notified players in game {GameSessionId} that user {UserId} left", gameSessionId, userId);
+                await Clients
+                    .Group($"game_{gameSessionId}")
+                    .SendAsync("PlayerLeft", notificationData);
+                _logger.LogInformation(
+                    "Notified players in game {GameSessionId} that user {UserId} left",
+                    gameSessionId,
+                    userId
+                );
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error notifying players about user leaving game {GameSessionId}", gameSessionId);
+                _logger.LogError(
+                    ex,
+                    "Error notifying players about user leaving game {GameSessionId}",
+                    gameSessionId
+                );
             }
         }
 
@@ -311,12 +333,21 @@ namespace Gchain.Hubs
                     Type = "GameStateChange"
                 };
 
-                await Clients.Group($"game_{gameSessionId}").SendAsync("GameStateChange", stateData);
-                _logger.LogInformation("Sent game state change to session {GameSessionId}", gameSessionId);
+                await Clients
+                    .Group($"game_{gameSessionId}")
+                    .SendAsync("GameStateChange", stateData);
+                _logger.LogInformation(
+                    "Sent game state change to session {GameSessionId}",
+                    gameSessionId
+                );
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error sending game state change to session {GameSessionId}", gameSessionId);
+                _logger.LogError(
+                    ex,
+                    "Error sending game state change to session {GameSessionId}",
+                    gameSessionId
+                );
             }
         }
 

@@ -5,6 +5,7 @@ namespace Gchain.Models;
 public class User : IdentityUser
 {
     public string? Preferences { get; set; }
+    public string? ProfilePictureUrl { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public AuthProvider AuthProvider { get; set; } = AuthProvider.Google;

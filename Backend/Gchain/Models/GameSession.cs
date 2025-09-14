@@ -5,7 +5,7 @@ public class GameSession
     public int Id { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string? CurrentWord { get; set; }
-    public GameLanguage Language { get; set; } = GameLanguage.AR;
+    public GameLanguage Language { get; set; } = GameLanguage.EN;
     public bool IsActive { get; set; } = true;
     public int TurnTimeLimitSeconds { get; set; } = 60;
     public int MaxLivesPerPlayer { get; set; } = 3;
@@ -21,6 +21,5 @@ public class GameSession
 
 public enum GameLanguage
 {
-    AR, // Arabic
     EN // English
 }

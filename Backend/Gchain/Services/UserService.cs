@@ -1,9 +1,14 @@
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Security.Cryptography;
+using System.Text;
 using Gchain.Data;
 using Gchain.DTOS;
 using Gchain.Interfaces;
 using Gchain.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
 
 namespace Gchain.Services;
 
@@ -15,16 +20,30 @@ public class UserService : IUserService
     private readonly UserManager<User> _userManager;
     private readonly ApplicationDbContext _dbContext;
     private readonly ILogger<UserService> _logger;
+    private readonly HttpClient _httpClient;
+    private readonly string _imageKitUrl = string.Empty;
+    private readonly string _imageKitPrivateKey = string.Empty;
+    private readonly string _imageKitPublicKey = string.Empty;
+    private readonly string _imageKitId = string.Empty;
 
     public UserService(
         UserManager<User> userManager,
         ApplicationDbContext dbContext,
-        ILogger<UserService> logger
+        ILogger<UserService> logger,
+        IConfiguration configuration,
+        HttpClient httpClient
     )
     {
         _userManager = userManager;
         _dbContext = dbContext;
         _logger = logger;
+        _httpClient = httpClient;
+
+        // Initialize ImageKit configuration
+        _imageKitUrl = configuration["ImageKit:Url"] ?? string.Empty;
+        _imageKitPrivateKey = configuration["ImageKit:PrivateKey"] ?? string.Empty;
+        _imageKitPublicKey = configuration["ImageKit:PublicKey"] ?? string.Empty;
+        _imageKitId = configuration["ImageKit:ImageKitId"] ?? string.Empty;
     }
 
     /// <summary>
@@ -167,6 +186,24 @@ public class UserService : IUserService
     }
 
     /// <summary>
+    /// Updates user session information
+    /// </summary>
+    public async Task<bool> UpdateUserSessionAsync(UserSession userSession)
+    {
+        try
+        {
+            _dbContext.UserSessions.Update(userSession);
+            await _dbContext.SaveChangesAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update user session {SessionId}", userSession.Id);
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Gets user profile data including game statistics
     /// </summary>
     public async Task<UserProfileData> GetUserProfileAsync(string userId)
@@ -198,7 +235,7 @@ public class UserService : IUserService
                 Preferences = user.Preferences,
                 CreatedAt = user.CreatedAt,
                 UpdatedAt = user.UpdatedAt,
-                ProfilePictureUrl = null, // Can be enhanced later
+                ProfilePictureUrl = user.ProfilePictureUrl,
                 DisplayName = user.UserName,
                 Bio = null, // Can be enhanced later
                 DateOfBirth = null, // Can be enhanced later
@@ -388,21 +425,175 @@ public class UserService : IUserService
         }
     }
 
-    /// <summary>
-    /// Updates user session information
-    /// </summary>
-    public async Task<bool> UpdateUserSessionAsync(UserSession userSession)
+    public async Task<bool> UpdateUserProfileAsync(
+        User user,
+        string? newUserName = null,
+        IFormFile? profilePicture = null
+    )
     {
         try
         {
-            _dbContext.UserSessions.Update(userSession);
-            await _dbContext.SaveChangesAsync();
-            return true;
+            if (newUserName != null)
+            {
+                user.UserName = newUserName;
+            }
+
+            if (profilePicture != null)
+            {
+                try
+                {
+                    _logger.LogInformation("=== ImageKit Upload Debug ===");
+                    _logger.LogInformation(
+                        "Uploading profile picture: {FileName}",
+                        profilePicture.FileName
+                    );
+
+                    using var stream = profilePicture.OpenReadStream();
+                    var bytes = new byte[stream.Length];
+                    var totalBytesRead = 0;
+                    while (totalBytesRead < bytes.Length)
+                    {
+                        var bytesRead = await stream.ReadAsync(
+                            bytes,
+                            totalBytesRead,
+                            bytes.Length - totalBytesRead
+                        );
+                        if (bytesRead == 0)
+                            break;
+                        totalBytesRead += bytesRead;
+                    }
+
+                    // Generate unique filename
+                    var fileName =
+                        $"profile-{user.Id}-{DateTime.UtcNow:yyyyMMddHHmmss}{Path.GetExtension(profilePicture.FileName)}";
+
+                    // Upload using ImageKit REST API
+                    var content = new MultipartFormDataContent();
+                    content.Add(new StreamContent(new MemoryStream(bytes)), "file", fileName);
+                    content.Add(new StringContent(_imageKitPublicKey), "publicKey");
+                    content.Add(new StringContent(fileName), "fileName");
+                    content.Add(new StringContent("/profile-pictures/"), "folder");
+                    content.Add(new StringContent("true"), "useUniqueFileName");
+
+                    // Generate token, expire, and signature
+                    var token = Guid.NewGuid().ToString();
+                    var expire = (
+                        DateTimeOffset.UtcNow.AddMinutes(30).ToUnixTimeSeconds()
+                    ).ToString(); // 30 minutes from now
+
+                    content.Add(new StringContent(token), "token");
+                    content.Add(new StringContent(expire), "expire");
+
+                    var signature = GenerateImageKitSignature(token, expire);
+                    content.Add(new StringContent(signature), "signature");
+
+                    var response = await _httpClient.PostAsync(_imageKitUrl, content);
+
+                    _logger.LogInformation(
+                        "ImageKit response status: {StatusCode}",
+                        response.StatusCode
+                    );
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var jsonResponse = await response.Content.ReadAsStringAsync();
+                        _logger.LogInformation(
+                            "ImageKit upload response: {Response}",
+                            jsonResponse
+                        );
+
+                        dynamic? resultData = JsonConvert.DeserializeObject(jsonResponse);
+                        _logger.LogInformation("Parsed response data: {Data}", (object?)resultData);
+
+                        if (resultData?.url != null)
+                        {
+                            user.ProfilePictureUrl = resultData.url;
+                            _logger.LogInformation(
+                                "Profile picture uploaded successfully: {Url}",
+                                user.ProfilePictureUrl
+                            );
+                        }
+                        else
+                        {
+                            _logger.LogError(
+                                "ImageKit upload failed: No URL in response. Response: {Response}",
+                                jsonResponse
+                            );
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        var errorResponse = await response.Content.ReadAsStringAsync();
+                        _logger.LogError(
+                            "ImageKit upload failed: {StatusCode} - {Error}",
+                            response.StatusCode,
+                            errorResponse
+                        );
+                        return false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "❌ Exception during ImageKit upload: {Message}",
+                        ex.Message
+                    );
+                    return false;
+                }
+            }
+
+            user.UpdatedAt = DateTime.UtcNow;
+
+            _logger.LogInformation(
+                "About to update user profile. ProfilePictureUrl: {Url}",
+                user.ProfilePictureUrl
+            );
+
+            var updateResult = await _userManager.UpdateAsync(user);
+
+            if (updateResult.Succeeded)
+            {
+                _logger.LogInformation(
+                    "Successfully updated user profile: {Email}. ProfilePictureUrl: {Url}",
+                    user.Email,
+                    user.ProfilePictureUrl
+                );
+                return true;
+            }
+
+            var errors = string.Join(", ", updateResult.Errors.Select(e => e.Description));
+            _logger.LogError("Failed to update user profile {Email}: {Errors}", user.Email, errors);
+            return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to update user session {SessionId}", userSession.Id);
+            _logger.LogError(
+                ex,
+                "Exception occurred while updating user profile {Email}",
+                user.Email
+            );
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Generates ImageKit signature for secure uploads
+    /// </summary>
+    private string GenerateImageKitSignature(string token, string expire)
+    {
+        try
+        {
+            var message = token + expire;
+            using var hmac = new HMACSHA1(Encoding.UTF8.GetBytes(_imageKitPrivateKey));
+            var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(message));
+            return Convert.ToHexString(hash).ToLower();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate ImageKit signature");
+            return string.Empty;
         }
     }
 }

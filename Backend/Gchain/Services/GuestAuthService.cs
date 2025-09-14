@@ -53,7 +53,7 @@ public class GuestAuthService : IGuestAuthService
                 // Update existing session with new tokens
                 existingSession.RefreshToken = newRefreshToken;
                 existingSession.ExpiresAt = DateTime.UtcNow.AddDays(7);
-                await _userService.UpdateUserSessionAsync(existingSession);
+                await _userService.UpdateUserProfileAsync(existingSession.User);
 
                 var existingRefreshToken = newRefreshToken;
 

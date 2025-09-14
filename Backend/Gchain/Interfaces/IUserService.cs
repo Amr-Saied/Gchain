@@ -1,5 +1,6 @@
 using Gchain.DTOS;
 using Gchain.Models;
+using Microsoft.AspNetCore.Http;
 
 namespace Gchain.Interfaces;
 
@@ -34,6 +35,19 @@ public interface IUserService
     /// <param name="user">User to update</param>
     /// <returns>Success status</returns>
     Task<bool> UpdateUserAsync(User user);
+
+    /// <summary>
+    /// Updates user profile (username and/or profile picture)
+    /// </summary>
+    /// <param name="user">User to update</param>
+    /// <param name="newUserName">New username (optional)</param>
+    /// <param name="profilePicture">Profile picture file (optional)</param>
+    /// <returns>Success status</returns>
+    Task<bool> UpdateUserProfileAsync(
+        User user,
+        string? newUserName = null,
+        IFormFile? profilePicture = null
+    );
 
     /// <summary>
     /// Creates a new user session

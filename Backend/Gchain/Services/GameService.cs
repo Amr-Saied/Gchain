@@ -50,7 +50,7 @@ namespace Gchain.Services
                 var gameSession = new GameSession
                 {
                     CreatedAt = DateTime.UtcNow,
-                    Language = request.Language == "English" ? GameLanguage.EN : GameLanguage.AR,
+                    Language = request.Language == "English" ? GameLanguage.EN : GameLanguage.EN,
                     TurnTimeLimitSeconds = request.TurnTimeLimit,
                     MaxLivesPerPlayer = request.MaxLives,
                     RoundsToWin = request.RoundsToWin,
@@ -188,6 +188,15 @@ namespace Gchain.Services
                     {
                         Success = false,
                         Message = "Game is not accepting players"
+                    };
+                }
+
+                if (gameSession.Language != GameLanguage.EN)
+                {
+                    return new JoinTeamResponse
+                    {
+                        Success = false,
+                        Message = "Only English language is supported."
                     };
                 }
 

@@ -55,7 +55,7 @@ namespace Gchain.DTOS
     {
         public int Id { get; set; }
         public DateTime CreatedAt { get; set; }
-        public string Language { get; set; } = string.Empty;
+        public string Language { get; set; } = "English";
         public bool IsActive { get; set; }
         public int TurnTimeLimitSeconds { get; set; }
         public int MaxLivesPerPlayer { get; set; }

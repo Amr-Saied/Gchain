@@ -309,12 +309,7 @@ public class HuggingFaceService : ISemanticSimilarityService
     /// </summary>
     private string GetModelForLanguage(GameLanguage language)
     {
-        return language switch
-        {
-            GameLanguage.EN => _settings.EnglishModel,
-            GameLanguage.AR => _settings.ArabicModel,
-            _ => _settings.EnglishModel
-        };
+        return _settings.EnglishModel;
     }
 
     /// <summary>

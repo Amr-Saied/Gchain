@@ -20,7 +20,11 @@ public class GameController : ControllerBase
     private readonly ILogger<GameController> _logger;
     private readonly IHubContext<GameHub> _gameHubContext;
 
-    public GameController(IGameService gameService, ILogger<GameController> logger, IHubContext<GameHub> gameHubContext)
+    public GameController(
+        IGameService gameService,
+        ILogger<GameController> logger,
+        IHubContext<GameHub> gameHubContext
+    )
     {
         _gameService = gameService;
         _logger = logger;
@@ -216,19 +220,27 @@ public class GameController : ControllerBase
                 // Send SignalR notification to other players
                 try
                 {
-                    await _gameHubContext.Clients.Group($"game_{request.GameSessionId}")
-                        .SendAsync("PlayerLeft", new
-                        {
-                            UserId = userId,
-                            GameSessionId = request.GameSessionId,
-                            Reason = "Player left the game",
-                            Timestamp = DateTime.UtcNow,
-                            Type = "PlayerLeft"
-                        });
+                    await _gameHubContext
+                        .Clients.Group($"game_{request.GameSessionId}")
+                        .SendAsync(
+                            "PlayerLeft",
+                            new
+                            {
+                                UserId = userId,
+                                GameSessionId = request.GameSessionId,
+                                Reason = "Player left the game",
+                                Timestamp = DateTime.UtcNow,
+                                Type = "PlayerLeft"
+                            }
+                        );
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to send SignalR notification for player leaving game {GameSessionId}", request.GameSessionId);
+                    _logger.LogError(
+                        ex,
+                        "Failed to send SignalR notification for player leaving game {GameSessionId}",
+                        request.GameSessionId
+                    );
                 }
 
                 return Ok(response);

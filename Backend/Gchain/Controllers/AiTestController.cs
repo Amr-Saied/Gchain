@@ -220,6 +220,11 @@ public class AiTestController : ControllerBase
     {
         try
         {
+            if (language != GameLanguage.EN)
+            {
+                return BadRequest(new { error = "Only English language is supported." });
+            }
+
             // Preload common words
             var preloadedCount = await _wordCache.PreloadCommonWordsAsync(language);
 
@@ -272,7 +277,6 @@ public class AiTestController : ControllerBase
             // Add some similarity cache entries
             await _wordCache.CacheSimilarityAsync("dog", "cat", 0.75, GameLanguage.EN);
             await _wordCache.CacheSimilarityAsync("house", "home", 0.85, GameLanguage.EN);
-            await _wordCache.CacheSimilarityAsync("كلب", "قطة", 0.70, GameLanguage.AR);
 
             // Get cached similarities
             var dogCatSimilarity = await _wordCache.GetCachedSimilarityAsync(
@@ -285,11 +289,6 @@ public class AiTestController : ControllerBase
                 "home",
                 GameLanguage.EN
             );
-            var arabicSimilarity = await _wordCache.GetCachedSimilarityAsync(
-                "كلب",
-                "قطة",
-                GameLanguage.AR
-            );
 
             // Clear cache
             var clearedCount = await _wordCache.ClearSimilarityCacheAsync(language);
@@ -300,11 +299,6 @@ public class AiTestController : ControllerBase
                 "cat",
                 GameLanguage.EN
             );
-            var arabicAfterClear = await _wordCache.GetCachedSimilarityAsync(
-                "كلب",
-                "قطة",
-                GameLanguage.AR
-            );
 
             return Ok(
                 new
@@ -312,12 +306,11 @@ public class AiTestController : ControllerBase
                     beforeClear = new
                     {
                         dogCat = dogCatSimilarity,
-                        houseHome = houseHomeSimilarity,
-                        arabic = arabicSimilarity
+                        houseHome = houseHomeSimilarity
                     },
                     clearedCount,
                     clearedLanguage = language?.ToString() ?? "ALL",
-                    afterClear = new { dogCat = dogCatAfterClear, arabic = arabicAfterClear }
+                    afterClear = new { dogCat = dogCatAfterClear }
                 }
             );
         }
