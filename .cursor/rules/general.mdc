@@ -1,0 +1,36 @@
+“Every piece of code in this project (backend & frontend) must be written in a clean, consistent, and scalable way: controllers only handle HTTP and validation, services contain business logic, DTOs are always used for input/output, API responses must be versioned, standardized, and return proper HTTP status codes in camelCase JSON, configuration and secrets must never be hardcoded but stored in environment-based settings, authentication must use JWT + refresh tokens stored in DB, migrations must be descriptive, error handling must follow a unified structure, async/await must be used for all I/O, commits must follow type(scope): message convention, features must live in branches and be merged only through PR + code review, Swagger must be enabled in dev, logging must use ILogger/Serilog not Console.WriteLine, tests (unit + integration) must exist for services and controllers, Angular must consume APIs through environment configs with consistent camelCase JSON, and deployments must always separate Development, Staging, and Production.”
+
+"Never include sensitive hardcoded values (API keys, connection strings, secrets, credentials) anywhere in code - all sensitive configuration must be stored in appsettings.json and its environment-specific variants (appsettings.Development.json, appsettings.Production.json) using proper configuration patterns and secure secrets management"
+
+"Always Check for code redunduncy and remove all unneccessery codes"
+"i don't want any single unused service, method or a class"
+"always make a folder called DOCS that keeps track of what's done so far in any project we made and if it does exist then update it to keep track of context"
+"never include context in any api related files like controllers"
+
+"Frontend development must follow a strict backend-first approach: thoroughly understand ASP.NET 9 backend implementation before writing any frontend code"
+
+"Backend controllers are the definitive source of truth for API endpoints and must be strictly followed when implementing frontend services"
+
+"Angular services must maintain a 1:1 mapping with backend controllers, exposing strongly typed methods that match controller endpoints"
+
+"Components must never make direct HTTP calls - all data access must go through Angular services"
+
+"Project must use Angular 20's standalone architecture without NgModules"
+
+"All routes must be centralized in a single app.routes.ts file using provideRouter"
+
+"Angular code must follow established best practices:
+
+- Components, directives, and pipes must be standalone
+- Services must use root-level dependency injection
+- Project structure must use dedicated folders for services, components, models, and routes"
+
+"Frontend models must be strongly typed and generated from backend DTOs"
+
+"Services must implement comprehensive error handling, loading states, and proper observable management"
+
+"UI must use Angular Material components, imported directly in standalone components"
+
+"Routing configuration must include default path redirects and a catch-all fallback route"
+
+"Components must be feature-based (e.g., UsersListComponent) rather than generic"

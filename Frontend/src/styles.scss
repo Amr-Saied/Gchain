@@ -1,0 +1,108 @@
+/* You can add global styles to this file, and also import other style files */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap");
+
+:root {
+  --color-bg: #0f1115;
+  --color-surface: #171a21;
+  --color-text: #e6e6e6;
+  --color-muted: #9aa0a6;
+  --color-primary: #f2c037; /* dark yellow */
+  --color-primary-hover: #e0b22f;
+  --color-teal: #1ec8a5;
+  --color-danger: #ef476f;
+  --radius: 10px;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: Inter, Roboto, Arial, sans-serif;
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--color-primary-hover);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+}
+.btn-primary {
+  background: var(--color-primary);
+  color: #141414;
+}
+.btn-primary:hover {
+  background: var(--color-primary-hover);
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid #2a2f3a;
+}
+.btn-ghost:hover {
+  border-color: var(--color-primary);
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid #202631;
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.app-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #11141a;
+  border-bottom: 1px solid #202631;
+}
+.app-navbar .nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+.brand .dot {
+  width: 10px;
+  height: 10px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  display: inline-block;
+}
+.nav-links {
+  display: flex;
+  gap: 1rem;
+}
+.nav-links a.active {
+  border-bottom: 2px solid var(--color-primary);
+  padding-bottom: 0.25rem;
+}
